@@ -201,6 +201,62 @@ def _connect_overworld_link(
     )
 
 
+def _select_overworld_link(
+    rng: MT19337Compat,
+    links_from_overworld: list[LogicLink],
+    *,
+    room_location: str | None,
+    preferred_entrance: int | None,
+    seed_links_locations: dict[int, str | None],
+    fixed_overworld_links: list[LogicLink],
+    switch_overworld_links: list[LogicLink],
+    crystal_source_location: str | None,
+) -> LogicLink:
+    available = links_from_overworld.copy()
+    if not available:
+        raise ValueError("No overworld links available")
+
+    available_ids = {id(l) for l in available}
+    fixed_pool = [l for l in fixed_overworld_links if id(l) in available_ids]
+    switch_pool = [l for l in switch_overworld_links if id(l) in available_ids]
+
+    def by_location(pool: list[LogicLink], location: str | None) -> list[LogicLink]:
+        if location in (None, "None"):
+            return []
+        return [l for l in pool if seed_links_locations.get(l.current.get("entrance")) == location]
+
+    def by_preferred(pool: list[LogicLink]) -> list[LogicLink]:
+        if preferred_entrance is None:
+            return []
+        return [l for l in pool if l.origin.get("entrance") == preferred_entrance]
+
+    candidate_groups: list[list[LogicLink]] = []
+    if crystal_source_location not in (None, "None"):
+        candidate_groups.extend(
+            [
+                by_location(switch_pool, crystal_source_location),
+                by_location(fixed_pool, crystal_source_location),
+            ]
+        )
+
+    candidate_groups.extend(
+        [
+            by_preferred(switch_pool),
+            by_preferred(fixed_pool),
+            by_location(switch_pool, room_location),
+            by_location(fixed_pool, room_location),
+            switch_pool,
+            fixed_pool,
+            available,
+        ]
+    )
+
+    for group in candidate_groups:
+        if group:
+            return rng.pick_from(group)
+    return rng.pick_from(available)
+
+
 def _crest_shuffle(rooms: list[dict[str, Any]], crest_shuffle: bool, rng: MT19337Compat) -> None:
     crest_list = [
         {"entrance": [67, 8], "origins": [64, 8], "deadend": True, "priority": 0},
@@ -477,6 +533,18 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
         if len(selected) == len(seed_locations):
             core_cluster_rooms = selected
     valid_seed_switch = [x for x in seed_shuffle if x not in core_cluster_rooms]
+    fixed_overworld_links = [
+        link
+        for cluster in seed_fixed
+        if set(cluster.rooms).intersection(subregion_room_ids)
+        for link in cluster.links
+    ]
+    switch_overworld_links = [
+        link
+        for cluster in valid_seed_switch
+        if set(cluster.rooms).intersection(subregion_room_ids)
+        for link in cluster.links
+    ]
 
     for room in core_cluster_rooms:
         valid_links = [x for x in room.links if not x.force_dead_end and not x.entrance_only]
@@ -497,18 +565,21 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
         if not links_from_overworld:
             continue
 
-        location_links = [
-            link
-            for link in links_from_overworld
-            if seed_links_locations.get(link.current.get("entrance")) == room.location
-        ]
         preferred_entrance = seed_overworld_entrance.get(id(room))
-        preferred_links = (
-            [link for link in links_from_overworld if link.origin.get("entrance") == preferred_entrance]
-            if preferred_entrance is not None
-            else []
+        crystal_source_location = next(
+            (c["location"] for c in crystal_rooms if set(room.rooms).intersection({c["target"], c["base"]})),
+            None,
         )
-        ow_link = rng.pick_from(preferred_links or location_links or links_from_overworld)
+        ow_link = _select_overworld_link(
+            rng,
+            links_from_overworld,
+            room_location=room.location,
+            preferred_entrance=preferred_entrance,
+            seed_links_locations=seed_links_locations,
+            fixed_overworld_links=fixed_overworld_links,
+            switch_overworld_links=switch_overworld_links,
+            crystal_source_location=crystal_source_location,
+        )
         ow_cluster = next((cluster for cluster in cluster_rooms if ow_link in cluster.links), None)
         if ow_cluster is not None:
             ow_cluster.links.remove(ow_link)

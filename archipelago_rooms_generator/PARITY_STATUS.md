@@ -7,9 +7,9 @@ This tracks parity work between:
 
 ## Snapshot
 
-- **Overall estimate:** ~80-90% behavioral parity for typical seeds/modes.
-- **Highest-risk remaining gap:** exact overworld relinking semantics.
-- **Current expected user impact:** most seeds produce playable shuffles; remaining divergence is mainly in edge-case branch choices and retry/failure semantics.
+- **Overall estimate:** ~85-92% behavioral parity for typical seeds/modes.
+- **Highest-risk remaining gap:** error/retry behavior parity.
+- **Current expected user impact:** most seeds produce playable shuffles; remaining divergence is primarily in edge-case failure/retry choices and diagnostics.
 
 ## What is now implemented in Python
 
@@ -42,7 +42,10 @@ This tracks parity work between:
   - propagates inherited restrictions while assembling a candidate
   - validates leftover link state before commit (no unresolved forced-deadend leftovers, even leftover link count)
   - commits pairings in batch only after a valid candidate is found
-- ✅ Overworld reconnection prefers matching location links where possible.
+- ✅ Overworld reconnection now follows explicit branch ordering across switch/fixed pools with:
+  - crystal-source location preference
+  - preferred-origin entrance matching
+  - location-aware fallback ordering
 
 ### Crystal routing
 
@@ -55,15 +58,7 @@ This tracks parity work between:
 
 ## Remaining gaps (ordered by impact)
 
-### 1) Exact overworld relinking semantics (MEDIUM-HIGH)
-
-**C# behavior:** explicit `ConnectOverworldLink(...)` flow with location-sensitive decisions across fixed/switch groups and crystal source logic.  
-**Python today:** location-preferred reconnection exists, but not all C# branching/fallback semantics are mirrored.
-
-Likely effect:
-- Region-to-overworld doorway mapping can differ while still being valid.
-
-### 2) Error/retry behavior parity (MEDIUM)
+### 1) Error/retry behavior parity (MEDIUM)
 
 **C# behavior:** targeted loops + explicit exception/dump paths in specific invalid states.  
 **Python today:** selected loops still use bailout/fallback behavior to avoid hard failures.
@@ -75,10 +70,9 @@ Likely effect:
 
 To claim full parity, all of the following should be true:
 
-1. Port `ConnectOverworldLink` branching semantics end-to-end.
-2. Align failure/diagnostic behavior for invalid placements.
-3. Add cross-implementation fixture tests that compare Python output to C# output for a seed/mode matrix.
+1. Align failure/diagnostic behavior for invalid placements.
+2. Add cross-implementation fixture tests that compare Python output to C# output for a seed/mode matrix.
 
 ## Practical next step
 
-Next highest-value coding step: port/verify full C# `ConnectOverworldLink` branch behavior, then add cross-implementation seed-matrix fixture comparisons.
+Next highest-value coding step: align C#-style failure/retry/diagnostic behavior, then add cross-implementation seed-matrix fixture comparisons.
