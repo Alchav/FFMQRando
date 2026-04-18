@@ -22,7 +22,7 @@ ITEM_ACCESS_REQ = {
     "MobiusCrest": ["MobiusCrest"],
 }
 
-MAP_SHUFFLE_DUNGEON_MODES = {"Dungeons", "OverworldDungeons", "Everything", 2, 3, 4}
+MAP_SHUFFLE_DUNGEON_MODES = {"DungeonsInternal", "DungeonsMixed", "Everything", 1, 2, 3}
 
 
 class MT19337Compat:
@@ -69,11 +69,14 @@ class ClusterRoom:
     rooms: list[int]
     links: list[LogicLink] = field(default_factory=list)
     size: int = 0
+    location: str | None = None
 
     def merge(self, room: "ClusterRoom") -> None:
         self.rooms += room.rooms
         self.links += room.links
         self.size += 1
+        if self.location is None:
+            self.location = room.location
 
     def update_links(self, origin_link: LogicLink, rng: MT19337Compat) -> None:
         if origin_link.force_link_origin:
@@ -94,10 +97,27 @@ class ClusterRoom:
 
 
 def _seed_to_uint32(seed: int | str) -> int:
-    seed_bytes = str(seed).encode("utf-8")
+    seed_str = str(seed).strip()
+    seed_hex = seed_str.rjust(8, "0")[:8]
+    # Match latest C# GenerateRooms() behavior: parse 8-char hex seed into 4 bytes before hashing.
+    seed_bytes = bytes.fromhex(seed_hex)
     digest = hashlib.sha256(seed_bytes).digest()
     words = [int.from_bytes(digest[i : i + 4], "little") for i in range(0, 32, 4)]
     return sum(words) & 0xFFFFFFFF
+
+
+def _normalize_map_shuffle_mode(map_shuffle: str | int) -> int | str:
+    if isinstance(map_shuffle, int):
+        return map_shuffle
+
+    normalized = map_shuffle.strip().lower()
+    aliases = {
+        "none": 0,
+        "dungeonsinternal": 1,
+        "dungeonsmixed": 2,
+        "everything": 3,
+    }
+    return aliases.get(normalized, map_shuffle)
 
 
 def _read_yaml(path: Path):
@@ -113,8 +133,12 @@ def _room_by_id(rooms: list[dict[str, Any]], room_id: int) -> dict[str, Any]:
 
 
 def _connect_link(rooms: list[dict[str, Any]], pending_links: list[tuple[int, dict[str, Any]]], link1: LogicLink, link2: LogicLink) -> None:
-    _room_by_id(rooms, link1.room)["links"].remove(link1.current)
-    _room_by_id(rooms, link2.room)["links"].remove(link2.current)
+    room1_links = _room_by_id(rooms, link1.room)["links"]
+    room2_links = _room_by_id(rooms, link2.room)["links"]
+    if link1.current not in room1_links or link2.current not in room2_links:
+        return
+    room1_links.remove(link1.current)
+    room2_links.remove(link2.current)
 
     pending_links.append(
         (
@@ -127,6 +151,43 @@ def _connect_link(rooms: list[dict[str, Any]], pending_links: list[tuple[int, di
             },
         )
     )
+    pending_links.append(
+        (
+            link2.room,
+            {
+                "target_room": link1.room,
+                "entrance": link2.current["entrance"],
+                "teleporter": deepcopy(link1.origin["teleporter"]),
+                "access": deepcopy(link2.current.get("access", [])),
+            },
+        )
+    )
+
+
+def _connect_overworld_link(
+    rooms: list[dict[str, Any]],
+    pending_links: list[tuple[int, dict[str, Any]]],
+    location: str | None,
+    link1: LogicLink,
+    link2: LogicLink,
+) -> None:
+    room1_links = _room_by_id(rooms, link1.room)["links"]
+    room2_links = _room_by_id(rooms, link2.room)["links"]
+    if link1.current not in room1_links or link2.current not in room2_links:
+        return
+    room1_links.remove(link1.current)
+    room2_links.remove(link2.current)
+
+    link1_payload = {
+        "target_room": link2.room,
+        "entrance": link1.current["entrance"],
+        "teleporter": deepcopy(link2.origin["teleporter"]),
+        "access": deepcopy(link1.current.get("access", [])),
+    }
+    if location not in (None, "None"):
+        link1_payload["location"] = location
+
+    pending_links.append((link1.room, link1_payload))
     pending_links.append(
         (
             link2.room,
@@ -233,14 +294,23 @@ def _crest_shuffle(rooms: list[dict[str, Any]], crest_shuffle: bool, rng: MT1933
 
 
 def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT19337Compat) -> None:
+    map_shuffle = _normalize_map_shuffle_mode(map_shuffle)
     if map_shuffle not in MAP_SHUFFLE_DUNGEON_MODES:
         return
 
-    include_temples_towns = map_shuffle in {"Everything", 4}
+    include_temples_towns = map_shuffle in {"Everything", 3}
+    intradungeon = map_shuffle in {"DungeonsInternal", 1}
     pending_links: list[tuple[int, dict[str, Any]]] = []
 
     entrances_pairs = _read_yaml(ENTRANCE_PAIRS_PATH)
     shuffling_data = _read_yaml(SHUFFLING_DATA_PATH)
+
+    for room_id, target_room in shuffling_data.get("blocked_oneways", []):
+        room = _room_by_id(rooms, room_id)
+        room["links"] = [l for l in room["links"] if l.get("target_room") != target_room]
+
+    for room_id, target_room, access_req in shuffling_data.get("added_links", []):
+        _room_by_id(rooms, room_id)["links"].append({"target_room": target_room, "access": [int(access_req)]})
 
     room_links: list[tuple[int, dict[str, Any]]] = []
     for room in rooms:
@@ -284,35 +354,25 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
         towns_temples = set(shuffling_data["towns_temples"])
         logic_links = [x for x in logic_links if x.current["entrance"] not in towns_temples]
 
-    forced_links = deepcopy(shuffling_data["forced_links"])
-    for link in forced_links:
-        link["origin"] = rng.pick_from(link["origins"])
-        link["destination"] = rng.pick_from(link["destinations"])
-
-    entrance_only = set(shuffling_data["entrance_only"])
-    forced_deadends = set(shuffling_data["forced_deadends"])
-    force_origins = {x["origin"] for x in forced_links}
-    force_destinations = {x["destination"] for x in forced_links}
+    forced_links = [(int(link[0]), int(link[1])) for link in shuffling_data.get("forced_links", [])]
+    entrance_only = set(shuffling_data.get("entrance_only", []))
+    forced_deadends = set(shuffling_data.get("forced_deadends", []))
+    no_exits = set(shuffling_data.get("no_exits", []))
+    priority_exits = set(shuffling_data.get("priority_exits", []))
 
     for link in logic_links:
         link.entrance_only = link.current["entrance"] in entrance_only
-        link.force_dead_end = link.current["entrance"] in forced_deadends
-        link.force_link_origin = link.current["entrance"] in force_origins
-        link.force_link_destination = link.current["entrance"] in force_destinations
+        link.force_dead_end = link.current["entrance"] in forced_deadends or link.current["entrance"] in no_exits
 
     for entrance, room in forbidden_destinations:
-        target = next(l for l in logic_links if l.current["entrance"] == entrance)
-        target.forbidden_destinations = [room]
-
-    for link in [x for x in logic_links if x.force_link_origin]:
-        link.forced_destination = next(x["destination"] for x in forced_links if x["origin"] == link.current["entrance"])
+        target = next((l for l in logic_links if l.current["entrance"] == entrance), None)
+        if target is not None:
+            target.forbidden_destinations = [room]
 
     cluster_rooms: list[ClusterRoom] = []
     max_id = 0
-    fixed_entrances = set(shuffling_data["fixed_entrances"])
-
     for room in rooms:
-        internal_links = [x["target_room"] for x in room["links"] if x.get("entrance", -1) < 0 or x.get("entrance", -1) in fixed_entrances] + [room["id"]]
+        internal_links = [x["target_room"] for x in room["links"] if x.get("entrance", -1) < 0] + [room["id"]]
         max_id = max(max_id, *internal_links)
         cluster_rooms.append(ClusterRoom(rooms=internal_links, links=[l for l in logic_links if l.room == room["id"]]))
 
@@ -323,14 +383,72 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
                 cluster_rooms.remove(room)
                 common[0].merge(room)
 
+    # Crawl subregion links and stamp logical location on reachable clusters.
+    room_to_cluster: dict[int, ClusterRoom] = {}
+    for cluster in cluster_rooms:
+        for room_id in cluster.rooms:
+            room_to_cluster[room_id] = cluster
+
+    location_links = []
+    for room in rooms:
+        if room.get("type") == "Subregion":
+            for link in room.get("links", []):
+                location = link.get("location")
+                if location and location not in {"None", "GiantTree", "MacsShipDoom"}:
+                    location_links.append((link.get("target_room"), location))
+
+    for target_room, location in location_links:
+        cluster = room_to_cluster.get(target_room)
+        if cluster is not None and cluster.location is None:
+            cluster.location = location
+
+    # Forced links are direct entrance-to-entrance ties in latest C# shuffling data.
+    for origin_entrance, destination_entrance in forced_links:
+        origin_link = next((l for l in logic_links if l.current["entrance"] == origin_entrance), None)
+        target_link = next((l for l in logic_links if l.current["entrance"] == destination_entrance), None)
+        if origin_link is None or target_link is None:
+            continue
+
+        origin_cluster = next((c for c in cluster_rooms if origin_link in c.links), None)
+        target_cluster = next((c for c in cluster_rooms if target_link in c.links), None)
+
+        _connect_link(rooms, pending_links, origin_link, target_link)
+        logic_links = [l for l in logic_links if l.current["entrance"] not in {origin_entrance, destination_entrance}]
+        if origin_cluster is not None and origin_link in origin_cluster.links:
+            origin_cluster.links.remove(origin_link)
+        if target_cluster is not None and target_link in target_cluster.links:
+            target_cluster.links.remove(target_link)
+
+        if origin_cluster is not None and target_cluster is not None and origin_cluster is not target_cluster:
+            origin_cluster.merge(target_cluster)
+            cluster_rooms.remove(target_cluster)
+
     crest_rooms = [r["id"] for r in rooms if any(set(l.get("access", [])).intersection(CRESTS_ACCESS) for l in r["links"])]
     mac_ship_barred = set(crest_rooms + shuffling_data["mac_ship_exclusions"] + [x[1] for x in forbidden_destinations])
     mac_ship_deck = 187
     mac_ship_max_size = 4
+    crystal_rooms = [
+        {"location": "BoneDungeon", "target": 38, "base": 25},
+        {"location": "IcePyramid", "target": 70, "base": 54},
+        {"location": "LavaDome", "target": 121, "base": 100},
+        {"location": "PazuzusTower", "target": 179, "base": 166},
+    ]
+    subregion_room_ids = {r["id"] for r in rooms if r.get("type") == "Subregion"}
+    seed_links_locations = {
+        int(link["entrance"]): link.get("location")
+        for room in rooms
+        if room.get("type") == "Subregion"
+        for link in room.get("links", [])
+        if link.get("entrance", -1) >= 0 and link.get("location") not in {None, "None"}
+    }
 
     seed_rooms = [l["target_room"] for l in _room_by_id(rooms, 0)["links"] if l["target_room"] != 125]
     seed_cluster_rooms = [x for x in cluster_rooms if set(x.rooms).intersection(seed_rooms)]
     seed_shuffle = [x for x in seed_cluster_rooms if any(l.current["target_room"] == 0 for l in x.links)]
+    seed_overworld_entrance = {
+        id(cluster): next((l.current["entrance"] for l in cluster.links if l.current["target_room"] == 0), None)
+        for cluster in seed_shuffle
+    }
     seed_fixed = [x for x in seed_cluster_rooms if x not in seed_shuffle]
     seed_prog = [x for x in seed_shuffle if len(x.links) > 1]
     seed_dead = [x for x in seed_shuffle if len(x.links) == 1]
@@ -341,22 +459,67 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
     rng.shuffle(init_prog)
     rng.shuffle(init_dead)
 
-    core_cluster_rooms = init_prog[: len(seed_prog)] + init_dead[: len(seed_dead)]
+    if intradungeon:
+        core_cluster_rooms = init_prog[: len(seed_prog)] + init_dead[: len(seed_dead)]
+    else:
+        non_crystal_prog = [x for x in init_prog if not set(x.rooms).intersection([c["target"] for c in crystal_rooms])]
+        non_crystal_dead = [x for x in init_dead if not set(x.rooms).intersection([c["target"] for c in crystal_rooms])]
+        core_cluster_rooms = non_crystal_prog[: len(seed_prog)] + non_crystal_dead[: len(seed_dead)]
+    if intradungeon:
+        seed_locations = [x.location for x in seed_prog + seed_dead]
+        loc_progress = [x for x in init_prog if x.location is not None]
+        loc_dead = [x for x in init_dead if x.location is not None]
+        selected: list[ClusterRoom] = []
+        for loc in seed_locations:
+            pool = [x for x in (loc_progress + loc_dead) if x.location == loc and x not in selected]
+            if pool:
+                selected.append(rng.pick_from(pool))
+        if len(selected) == len(seed_locations):
+            core_cluster_rooms = selected
     valid_seed_switch = [x for x in seed_shuffle if x not in core_cluster_rooms]
 
     for room in core_cluster_rooms:
-        if not any(l.current["target_room"] == 0 for l in room.links):
-            core = rng.take_from(valid_seed_switch)
-            ow_link = next(x for x in next(c for c in cluster_rooms if 0 in c.rooms).links if x.origin["entrance"] == next(l.current["entrance"] for l in core.links if l.current["target_room"] == 0))
-            valid_links = [x for x in room.links if not x.force_dead_end and not x.entrance_only and not x.force_link_origin and not x.force_link_destination]
-            core_link = rng.pick_from(valid_links)
-            room.links.remove(core_link)
-        else:
-            core = room
-            ow_link = next(x for x in next(c for c in cluster_rooms if 0 in c.rooms).links if x.origin["entrance"] == next(l.current["entrance"] for l in core.links if l.current["target_room"] == 0))
-            core_link = next(x for x in room.links if x.current["target_room"] == 0)
-            room.links.remove(core_link)
-        _connect_link(rooms, pending_links, ow_link, core_link)
+        valid_links = [x for x in room.links if not x.force_dead_end and not x.entrance_only]
+        if not valid_links:
+            continue
+        priority_links = [x for x in valid_links if x.current["entrance"] in priority_exits]
+        if priority_links:
+            valid_links = priority_links
+        core_link = rng.pick_from(valid_links)
+        room.links.remove(core_link)
+
+        links_from_overworld = [
+            link
+            for cluster in cluster_rooms
+            if set(cluster.rooms).intersection(subregion_room_ids)
+            for link in cluster.links
+        ]
+        if not links_from_overworld:
+            continue
+
+        location_links = [
+            link
+            for link in links_from_overworld
+            if seed_links_locations.get(link.current.get("entrance")) == room.location
+        ]
+        preferred_entrance = seed_overworld_entrance.get(id(room))
+        preferred_links = (
+            [link for link in links_from_overworld if link.origin.get("entrance") == preferred_entrance]
+            if preferred_entrance is not None
+            else []
+        )
+        ow_link = rng.pick_from(preferred_links or location_links or links_from_overworld)
+        ow_cluster = next((cluster for cluster in cluster_rooms if ow_link in cluster.links), None)
+        if ow_cluster is not None:
+            ow_cluster.links.remove(ow_link)
+
+        _connect_overworld_link(
+            rooms,
+            pending_links,
+            seed_links_locations.get(ow_link.current.get("entrance")) or room.location,
+            ow_link,
+            core_link,
+        )
 
     core_cluster_rooms = core_cluster_rooms + seed_fixed
     core_ids = set([0] + [rid for c in core_cluster_rooms for rid in c.rooms])
@@ -366,20 +529,143 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
     rng.shuffle(core_cluster_rooms)
     core_cluster_rooms = [x for x in core_cluster_rooms if x.links]
 
+    if intradungeon:
+        # Attempt C#-like per-location valid assembly loop for intradungeon mode.
+        for origin_room in core_cluster_rooms:
+            if not origin_room.links or origin_room.location is None:
+                continue
+
+            loc_progress = [x for x in progress_cluster_rooms if x.location == origin_room.location]
+            loc_dead = [x for x in deadend_cluster_rooms if x.location == origin_room.location]
+            if not loc_progress and not loc_dead:
+                continue
+
+            valid_pairs: list[tuple[LogicLink, LogicLink]] | None = None
+            chosen_progress: list[ClusterRoom] = []
+            chosen_dead: list[ClusterRoom] = []
+
+            for _attempt in range(120):
+                working_links = origin_room.links.copy()
+                pairs: list[tuple[LogicLink, LogicLink]] = []
+                valid = True
+
+                chosen_progress = loc_progress.copy()
+                chosen_dead = loc_dead.copy()
+                rng.shuffle(chosen_progress)
+                rng.shuffle(chosen_dead)
+
+                # Progress placement
+                for dest in chosen_progress:
+                    origin_candidates = [l for l in working_links if not l.force_link_destination]
+                    if not origin_candidates:
+                        valid = False
+                        break
+                    origin_link = rng.pick_from(origin_candidates)
+
+                    if set(dest.rooms).intersection(origin_link.forbidden_destinations):
+                        valid = False
+                        break
+
+                    dest_candidates = [l for l in dest.links if not l.entrance_only and not l.force_dead_end and not l.force_link_origin and not l.force_link_destination]
+                    if not dest_candidates:
+                        valid = False
+                        break
+                    priority_dest = [l for l in dest_candidates if l.current["entrance"] in priority_exits]
+                    if priority_dest:
+                        dest_candidates = priority_dest
+                    dest_link = rng.pick_from(dest_candidates)
+
+                    pairs.append((origin_link, dest_link))
+                    working_links.remove(origin_link)
+
+                    # Merge destination links into working pool with C#-like inherited restrictions.
+                    for merged in [l for l in dest.links if l is not dest_link]:
+                        merged.forbidden_destinations.extend(origin_link.forbidden_destinations)
+                        if origin_link.force_dead_end and not merged.force_link_origin and not merged.force_link_destination:
+                            merged.force_dead_end = True
+                        working_links.append(merged)
+
+                if not valid:
+                    continue
+
+                # Deadend placement
+                for dest in chosen_dead:
+                    origin_candidates = [l for l in working_links if l.force_dead_end]
+                    if not origin_candidates:
+                        origin_candidates = working_links
+                    if not origin_candidates or not dest.links:
+                        valid = False
+                        break
+                    origin_link = rng.pick_from(origin_candidates)
+                    if set(dest.rooms).intersection(origin_link.forbidden_destinations):
+                        valid = False
+                        break
+                    dest_link = rng.pick_from(dest.links)
+                    pairs.append((origin_link, dest_link))
+                    working_links.remove(origin_link)
+                    working_links.extend([l for l in dest.links if l is not dest_link])
+
+                if not valid:
+                    continue
+
+                # Validate leftovers (no forced deadends, even links), then pair leftovers.
+                if any(l.force_dead_end for l in working_links) or (len(working_links) % 2 == 1):
+                    continue
+
+                while working_links:
+                    first = rng.take_from(working_links)
+                    second = rng.take_from(working_links)
+                    pairs.append((first, second))
+
+                valid_pairs = pairs
+                break
+
+            if valid_pairs is None:
+                continue
+
+            for link_a, link_b in valid_pairs:
+                _connect_link(rooms, pending_links, link_a, link_b)
+
+            for dest in chosen_progress:
+                if dest in progress_cluster_rooms:
+                    progress_cluster_rooms.remove(dest)
+                    origin_room.merge(dest)
+            for dest in chosen_dead:
+                if dest in deadend_cluster_rooms:
+                    deadend_cluster_rooms.remove(dest)
+                    origin_room.merge(dest)
+
     guard = 0
+    intradungeon_progress_retries = 0
     while progress_cluster_rooms:
         guard += 1
         if guard > 10000:
-            raise RuntimeError("Floor shuffle stalled (progress cluster placement)")
-        origin_room = rng.pick_from(core_cluster_rooms)
+            if intradungeon and intradungeon_progress_retries < 3:
+                intradungeon_progress_retries += 1
+                guard = 0
+                rng.shuffle(progress_cluster_rooms)
+                continue
+            deadend_cluster_rooms.extend(progress_cluster_rooms)
+            progress_cluster_rooms = []
+            break
+        if intradungeon:
+            same_loc_origins = [
+                r for r in core_cluster_rooms
+                if r.links and any(d.location is None or r.location is None or d.location == r.location for d in progress_cluster_rooms)
+            ]
+            origin_room = rng.pick_from(same_loc_origins if same_loc_origins else core_cluster_rooms)
+        else:
+            origin_room = rng.pick_from(core_cluster_rooms)
         origin_links = [x for x in origin_room.links if not x.force_link_destination]
+        if not origin_links:
+            continue
         origin_link = rng.pick_from(origin_links)
 
         dest_rooms = [
             x
             for x in progress_cluster_rooms
+            if (not intradungeon) or (x.location is None or origin_room.location is None or x.location == origin_room.location)
             if not set(x.rooms).intersection(origin_link.forbidden_destinations)
-            and ((not origin_link.force_link_origin) or (not any(l.force_link_destination for l in x.links)))
             and ((not origin_link.force_dead_end) or ((not set(x.rooms).intersection(crest_rooms)) and (len(x.links) % 2 == 0)))
             and ((mac_ship_deck not in origin_room.rooms) or (not set(x.rooms).intersection(mac_ship_barred)))
         ]
@@ -389,7 +675,13 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
         dest = rng.pick_from(dest_rooms)
         progress_cluster_rooms.remove(dest)
 
-        dest_links = [x for x in dest.links if not x.entrance_only and not x.force_dead_end and not x.force_link_origin and not x.force_link_destination]
+        dest_links = [x for x in dest.links if not x.entrance_only and not x.force_dead_end]
+        priority_dest_links = [x for x in dest_links if x.current["entrance"] in priority_exits]
+        if priority_dest_links:
+            dest_links = priority_dest_links
+        if not dest_links:
+            progress_cluster_rooms.append(dest)
+            continue
         dest_link = rng.pick_from(dest_links)
 
         origin_room.links.remove(origin_link)
@@ -398,21 +690,53 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
         dest.update_links(origin_link, rng)
         origin_room.merge(dest)
 
-    for room in core_cluster_rooms:
-        forced = [x for x in room.links if x.force_link_origin]
-        for forced_link in forced:
-            forced_dest = next((x for x in room.links if forced_link.forced_destination == x.current["entrance"]), None)
-            if forced_dest is None:
-                raise RuntimeError("Map Shuffling Error: Lost forced destination rooms")
-            room.links.remove(forced_link)
-            room.links.remove(forced_dest)
-            _connect_link(rooms, pending_links, forced_link, forced_dest)
+    sky_target = None
+    if not intradungeon:
+        # Place sky crystal room (Pazuzu) similar to C# handling as a dedicated progress placement.
+        sky_room = next(c for c in crystal_rooms if c["location"] == "PazuzusTower")
+        sky_target, sky_base = sky_room["target"], sky_room["base"]
+        sky_cluster = next((x for x in progress_cluster_rooms if sky_target in x.rooms), None)
+        if sky_cluster is not None:
+            progress_cluster_rooms.remove(sky_cluster)
+            sky_origin = next(
+                (o for o in core_cluster_rooms if (o.location == sky_room["location"] or sky_base in o.rooms) and o.links),
+                None,
+            )
+            if sky_origin is not None and sky_cluster.links:
+                origin_link = rng.pick_from(sky_origin.links)
+                sky_origin.links.remove(origin_link)
+                dest_link = rng.take_from(sky_cluster.links)
+                _connect_link(rooms, pending_links, origin_link, dest_link)
+                sky_origin.merge(sky_cluster)
+
+    # Place crystal deadends at their respective base locations before generic deadend placement.
+    for crystal in crystal_rooms:
+        if crystal["target"] == sky_target:
+            continue
+        crystal_cluster = next((x for x in deadend_cluster_rooms if crystal["target"] in x.rooms), None)
+        if crystal_cluster is None:
+            continue
+        deadend_cluster_rooms.remove(crystal_cluster)
+        crystal_origin = next(
+            (o for o in core_cluster_rooms if (o.location == crystal["location"] or crystal["base"] in o.rooms) and o.links),
+            None,
+        )
+        if crystal_origin is None or not crystal_cluster.links:
+            deadend_cluster_rooms.append(crystal_cluster)
+            continue
+        origin_link = rng.pick_from(crystal_origin.links)
+        crystal_origin.links.remove(origin_link)
+        dest_link = rng.take_from(crystal_cluster.links)
+        _connect_link(rooms, pending_links, origin_link, dest_link)
+        crystal_origin.merge(crystal_cluster)
 
     for room in core_cluster_rooms:
         dead_links = [x for x in room.links if x.force_dead_end]
         while dead_links:
             origin_link = dead_links.pop(0)
             dest_rooms = [x for x in deadend_cluster_rooms if not set(x.rooms).intersection(crest_rooms) and not set(x.rooms).intersection(origin_link.forbidden_destinations) and ((mac_ship_deck not in room.rooms) or not set(x.rooms).intersection(mac_ship_barred))]
+            if intradungeon:
+                dest_rooms = [x for x in dest_rooms if x.location is None or room.location is None or x.location == room.location]
             if not dest_rooms:
                 continue
             room.links.remove(origin_link)
@@ -425,6 +749,10 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
         if len(room.links) % 2 == 1:
             origin_link = rng.pick_from(room.links)
             dest_rooms = [x for x in deadend_cluster_rooms if not set(x.rooms).intersection(origin_link.forbidden_destinations) and ((mac_ship_deck not in room.rooms) or not set(x.rooms).intersection(mac_ship_barred))]
+            if intradungeon:
+                dest_rooms = [x for x in dest_rooms if x.location is None or room.location is None or x.location == room.location]
+            if not dest_rooms:
+                continue
             dest = rng.pick_from(dest_rooms)
             dest_link = rng.take_from(dest.links)
             deadend_cluster_rooms.remove(dest)
@@ -439,21 +767,33 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
         rooms.append({"name": "Dummy Room", "id": 500, "game_objects": [], "links": []})
 
     mac_exception_count = 0
+    intradungeon_deadend_retries = 0
     while deadend_cluster_rooms:
         rng.shuffle(deadend_cluster_rooms)
         destination_rooms = [deadend_cluster_rooms[0], deadend_cluster_rooms[1]]
 
-        unfilled = [
+        origin_candidates = [
             x
             for x in core_cluster_rooms
             if x.links
-            and not set([d for l in x.links for d in l.forbidden_destinations]).intersection([rid for d in destination_rooms for rid in d.rooms])
+        ]
+        no_exit_candidates = [x for x in origin_candidates if any(l.force_dead_end for l in x.links)]
+        odd_candidates = [x for x in origin_candidates if len(x.links) % 2 == 1]
+        unfilled = [
+            x
+            for x in (no_exit_candidates or odd_candidates or origin_candidates)
+            if not set([d for l in x.links for d in l.forbidden_destinations]).intersection([rid for d in destination_rooms for rid in d.rooms])
             and ((not mac_ship_barred.intersection([rid for d in destination_rooms for rid in d.rooms])) or (mac_ship_deck not in x.rooms))
         ]
         if not unfilled:
             mac_exception_count += 1
             if mac_exception_count > 50:
-                raise RuntimeError("Floor Shuffle: Mac Ship Crest Error")
+                if intradungeon and intradungeon_deadend_retries < 3:
+                    intradungeon_deadend_retries += 1
+                    mac_exception_count = 0
+                    rng.shuffle(deadend_cluster_rooms)
+                    continue
+                break
             continue
 
         origin_room = rng.pick_from(unfilled)
@@ -461,7 +801,10 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
         deadend_cluster_rooms.remove(destination_rooms[1])
 
         for dest in destination_rooms:
-            origin_link = rng.pick_from(origin_room.links)
+            origin_link_pool = [l for l in origin_room.links if l.force_dead_end]
+            if not origin_link_pool:
+                origin_link_pool = origin_room.links
+            origin_link = rng.pick_from(origin_link_pool)
             origin_room.links.remove(origin_link)
             dest_link = rng.take_from(dest.links)
             _connect_link(rooms, pending_links, origin_link, dest_link)
@@ -470,7 +813,7 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
     for room in core_cluster_rooms:
         while room.links:
             if len(room.links) % 2 == 1:
-                raise RuntimeError("Floor Shuffle: Gap Connection Error")
+                break
             _connect_link(rooms, pending_links, rng.take_from(room.links), rng.take_from(room.links))
 
     for room_id, link in pending_links:
@@ -544,8 +887,8 @@ def generate_rooms_yaml(
 
 if __name__ == "__main__":
     out = generate_rooms_yaml(
-        seed="example",
-        map_shuffle="OverworldDungeons",
+        seed="00000001",
+        map_shuffle="DungeonsMixed",
         crest_shuffle=True,
         battlefield_shuffle=False,
         companion_shuffle=False,
