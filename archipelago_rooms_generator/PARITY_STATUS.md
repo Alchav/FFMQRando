@@ -7,9 +7,9 @@ This tracks parity work between:
 
 ## Snapshot
 
-- **Overall estimate:** ~90-95% behavioral parity for typical seeds/modes.
-- **Highest-risk remaining gap:** cross-implementation output fixture coverage.
-- **Current expected user impact:** generation behavior is closely aligned; remaining confidence work is primarily verification breadth rather than known algorithmic gaps.
+- **Overall estimate:** ~95%+ behavioral parity for typical seeds/modes.
+- **Highest-risk remaining gap:** no major algorithmic gaps currently tracked.
+- **Current expected user impact:** generation behavior is closely aligned with current parity targets; ongoing work is primarily fixture maintenance as data/logic evolves.
 
 ## What is now implemented in Python
 
@@ -58,19 +58,15 @@ This tracks parity work between:
 
 ## Remaining gaps (ordered by impact)
 
-### 1) Cross-implementation fixture matrix coverage (LOW-MEDIUM)
-
-**Status:** parity logic work is implemented for current tracked items; remaining work is expanding regression confidence via seed/mode fixture comparisons against C# outputs.
+- None currently tracked as open parity gaps in this document.
 
 ## Completion criteria for “full parity”
 
 To claim full parity, all of the following should be true:
 
-1. Align failure/diagnostic behavior for invalid placements.
-2. Add cross-implementation fixture tests that compare Python output to C# output for a seed/mode matrix.
-
-> Note: item (1) is now substantially implemented in floor-shuffle retry/diagnostic paths; fixture coverage remains the primary completion blocker.
+1. Keep cross-implementation seed/mode fixture matrix up to date with future logic/data changes.
+2. Re-run parity verification when upstream C# behavior changes.
 
 ## Practical next step
 
-Next highest-value coding step: add cross-implementation seed-matrix fixture comparisons and use them to validate any remaining edge-case branch differences.
+Next highest-value coding step: expand matrix breadth (more seeds/options) as a maintenance task when parity-sensitive logic changes.

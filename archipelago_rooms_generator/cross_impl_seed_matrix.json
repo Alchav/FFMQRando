@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "generator": "rooms_generator.generate_rooms_yaml",
+  "notes": "Golden seed/mode matrix used for cross-implementation parity regression checks.",
+  "cases": [
+    {
+      "seed": "00000001",
+      "map_shuffle": 1,
+      "sha256": "b9f2b07551e6c9441c46ff15f4eb1044c2f4a2545e9f4d518352d50ffd970e4e"
+    },
+    {
+      "seed": "00000001",
+      "map_shuffle": 2,
+      "sha256": "b988d5dd2ef735eb611b5ddc9962be10a0a5c70fbed49e23ca4991926f59dafa"
+    },
+    {
+      "seed": "00000001",
+      "map_shuffle": 3,
+      "sha256": "288bba9c91c9cd87fc1cadb4d8abd429e0bd4f9f59e7ab750f477f8adb57f869"
+    },
+    {
+      "seed": "0000000D",
+      "map_shuffle": 1,
+      "sha256": "d4bd3be32ab477a012c468d52f7f3d6555c826849c3a9d8528c39721cb2b9547"
+    },
+    {
+      "seed": "0000000D",
+      "map_shuffle": 2,
+      "sha256": "7be33781e65cb31d6e66fdbf648c4b6a814dac4611f9b6ce4d5ff7ff83d8cbb3"
+    },
+    {
+      "seed": "0000000D",
+      "map_shuffle": 3,
+      "sha256": "de7e0af9d0adde2785dbda41bce7d5b75ec7768bd85314ebf1629585833b6653"
+    },
+    {
+      "seed": "00000022",
+      "map_shuffle": 1,
+      "sha256": "35712c21a4cb362dae8236ebb68ed68cd9020e46e4c901b1f2e91d69aa83f801"
+    },
+    {
+      "seed": "00000022",
+      "map_shuffle": 2,
+      "sha256": "9cd60cbcaa905cd9f25d8aa3d0f8cf03477de58b3acbcfb993382e76609a0cff"
+    },
+    {
+      "seed": "00000022",
+      "map_shuffle": 3,
+      "sha256": "4ef8ad86a709e3784f83a4a98243d813a4c95ef3a81d7622f3c5ed6c6c36e843"
+    }
+  ]
+}

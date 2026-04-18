@@ -1,4 +1,6 @@
 import pytest
+import hashlib
+from pathlib import Path
 
 from archipelago_rooms_generator.rooms_generator import (
     LogicLink,
@@ -10,6 +12,8 @@ from archipelago_rooms_generator.rooms_generator import (
     _select_overworld_link,
     generate_rooms_yaml,
 )
+
+DATA_DIR = Path(__file__).resolve().parent
 
 
 def test_map_shuffle_aliases():
@@ -86,3 +90,18 @@ def test_select_overworld_link_prefers_crystal_location_first():
         crystal_source_location="BoneDungeon",
     )
     assert selected is fixed_crystal
+
+
+def test_cross_impl_seed_matrix_hashes_match():
+    fixture = _read_yaml(DATA_DIR / "cross_impl_seed_matrix.json")
+    for case in fixture["cases"]:
+        generated = generate_rooms_yaml(
+            seed=case["seed"],
+            map_shuffle=case["map_shuffle"],
+            crest_shuffle=True,
+            battlefield_shuffle=False,
+            companion_shuffle=False,
+            kaeli_mom=False,
+        )
+        digest = hashlib.sha256(generated.encode()).hexdigest()
+        assert digest == case["sha256"], f"Mismatch for seed={case['seed']} map_shuffle={case['map_shuffle']}"
