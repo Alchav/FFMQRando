@@ -1,19 +1,24 @@
 import pytest
 import hashlib
+from itertools import product
 from pathlib import Path
 
 from archipelago_rooms_generator.rooms_generator import (
     LogicLink,
     MT19337Compat,
+    ROOMS_PATH,
     SHUFFLING_DATA_PATH,
     _normalize_map_shuffle_mode,
     _read_yaml,
     _seed_to_uint32,
     _select_overworld_link,
+    _shuffle_battlefield_rewards,
+    _companions_shuffle,
     generate_rooms_yaml,
 )
 
 DATA_DIR = Path(__file__).resolve().parent
+SMOKE_OPTION_MATRIX = list(product([0, 1, 2, 3], [False, True], [False, True], [0, 1, 2], [False, True], [False, True]))
 
 
 def test_map_shuffle_aliases():
@@ -38,6 +43,31 @@ def test_shufflingdata_uses_current_schema():
     assert "blocked_oneways" in data
 
 
+@pytest.mark.parametrize(
+    ("map_shuffle", "crest_shuffle", "battlefield_shuffle", "companion_shuffle", "kaeli_mom", "overworld_shuffle"),
+    SMOKE_OPTION_MATRIX,
+)
+def test_generate_rooms_yaml_smoke(
+    map_shuffle,
+    crest_shuffle,
+    battlefield_shuffle,
+    companion_shuffle,
+    kaeli_mom,
+    overworld_shuffle,
+):
+    generated = generate_rooms_yaml(
+        seed="00000001",
+        map_shuffle=map_shuffle,
+        crest_shuffle=crest_shuffle,
+        battlefield_shuffle=battlefield_shuffle,
+        companion_shuffle=companion_shuffle,
+        kaeli_mom=kaeli_mom,
+        overworld_shuffle=overworld_shuffle,
+    )
+    assert isinstance(generated, str)
+    assert generated
+
+
 def test_internal_and_mixed_modes_are_distinct():
     internal = generate_rooms_yaml(
         seed="00000001",
@@ -46,6 +76,7 @@ def test_internal_and_mixed_modes_are_distinct():
         battlefield_shuffle=False,
         companion_shuffle=False,
         kaeli_mom=False,
+        overworld_shuffle=False,
     )
     mixed = generate_rooms_yaml(
         seed="00000001",
@@ -54,6 +85,7 @@ def test_internal_and_mixed_modes_are_distinct():
         battlefield_shuffle=False,
         companion_shuffle=False,
         kaeli_mom=False,
+        overworld_shuffle=False,
     )
     assert internal != mixed
 
@@ -102,9 +134,36 @@ def test_cross_impl_seed_matrix_hashes_match():
             battlefield_shuffle=False,
             companion_shuffle=False,
             kaeli_mom=False,
+            overworld_shuffle=False,
         )
         digest = hashlib.sha256(generated.encode()).hexdigest()
         assert digest == case["sha256"], f"Mismatch for seed={case['seed']} map_shuffle={case['map_shuffle']}"
+
+
+def test_battlefield_logic_marks_gold_rewards_with_gp_trigger():
+    rooms = _read_yaml(ROOMS_PATH)
+    rng = MT19337Compat(1)
+    _shuffle_battlefield_rewards(rooms, battlefield_shuffle=False, rng=rng)
+    foresta_subregion = next(room for room in rooms if room["id"] == 220)
+    gold_battlefield = next(obj for obj in foresta_subregion["game_objects"] if obj["object_id"] == 3)
+    assert gold_battlefield["type"] == "BattlefieldGp"
+    assert gold_battlefield["on_trigger"] == ["Gp150"]
+
+
+def test_companion_shuffle_moves_companions_in_nonstandard_mode():
+    rooms = _read_yaml(ROOMS_PATH)
+    rng = MT19337Compat(1)
+    _companions_shuffle(rooms, companion_shuffle=1, kaeli_mom=False, rng=rng)
+    companion_rooms = {
+        room["id"]: sorted(
+            obj["name"]
+            for obj in room.get("game_objects", [])
+            if set(obj.get("on_trigger", [])).intersection({"Kaeli", "Tristam", "Phoebe", "Reuben", "TreeWitherPerson"})
+        )
+        for room in rooms
+    }
+    assert companion_rooms[17] != ["Kaeli Companion", "Tree Wither Person"]
+    assert sum(1 for names in companion_rooms.values() if names) == 4
 
 
 def test_overworld_shuffle_argument_changes_topology():
