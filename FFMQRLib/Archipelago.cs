@@ -567,6 +567,16 @@ namespace FFMQLib
 
 			return GameLogic.OutputRooms();
 		}
+		public TemporaryRoomsTraceResult GenerateRoomsTrace(bool crestshuffle, bool battlefieldshuffle, int mapshuffling, int companionshuffling, bool kaelismom, bool? refoverworldshuffle, string version, string seed)
+		{
+			using var traceScope = TemporaryRoomsTrace.BeginCapture();
+			var yaml = GenerateRooms(crestshuffle, battlefieldshuffle, mapshuffling, companionshuffling, kaelismom, refoverworldshuffle, version, seed);
+			return new TemporaryRoomsTraceResult()
+			{
+				Yaml = yaml,
+				Trace = TemporaryRoomsTrace.Snapshot(),
+			};
+		}
 		public void ArchipelagoSupport(bool apenabled)
 		{
 			ItemFetcher();

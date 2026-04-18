@@ -71,7 +71,7 @@ namespace FFMQLib
 				Items.MobiusCrest,
 			};
 
-			crestList.Shuffle(rng);
+			crestList.ShuffleTrace(rng);
 			crestList = crestList.OrderByDescending(x => x.Priority).ToList();
 
 			List<(int priority, Items crest)> crestPriority = new();

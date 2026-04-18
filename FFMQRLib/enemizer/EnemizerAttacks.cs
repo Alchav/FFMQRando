@@ -209,7 +209,7 @@ namespace FFMQLib
 				switchList.Add(tempbossB, tempbossA);
 			}
 
-			var oldattacks = attacks.Data.ToDictionary();
+			var oldattacks = attacks.Data.ToDictionary(entry => entry.Key, entry => entry.Value);
 			foreach (var link in oldattacks.Values)
 			{
 				if (switchList.TryGetValue(link.Id, out var newid))

@@ -21,15 +21,34 @@ namespace FFMQLib
     {
         public static T PickFrom<T>(this MT19337 rng, IList<T> list)
         {
-            return list[rng.Between(0, list.Count - 1)];
+            int index = rng.Between(0, list.Count - 1);
+            TemporaryRoomsTrace.LogPick(list.Count, index, "PickFrom");
+            return list[index];
         }
 
         public static T TakeFrom<T>(this MT19337 rng, IList<T> list)
         {
-            var value = rng.PickFrom(list);
+            int index = rng.Between(0, list.Count - 1);
+            var value = list[index];
+            int removedIndex = list.IndexOf(value);
+            TemporaryRoomsTrace.LogTake(list.Count, index, removedIndex, "TakeFrom");
             list.Remove(value);
             return value;
         }
+
+		public static void ShuffleTrace<T>(this IList<T> list, MT19337 rng)
+		{
+			List<int> swaps = new();
+
+			for (int i = list.Count - 1; i > 0; i--)
+			{
+				int j = rng.Between(0, i);
+				swaps.Add(j);
+				(list[i], list[j]) = (list[j], list[i]);
+			}
+
+			TemporaryRoomsTrace.LogShuffle(list.Count, swaps, "Shuffle");
+		}
 
 		public static bool IsEmpty<T>(this IList<T> list) => list.Count == 0;
 

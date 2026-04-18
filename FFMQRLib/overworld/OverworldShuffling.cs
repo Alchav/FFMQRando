@@ -47,7 +47,7 @@ namespace FFMQLib
 				companionsRating.Add(gamelogic.CrawlForCompanionRating(location, kaelismom));
 			}
 			
-			companionsRating.Shuffle(rng);
+			companionsRating.ShuffleTrace(rng);
 			companionsRating = companionsRating.Where(x => x.Item2 > 0).OrderByDescending(x => x.Item2).ToList();
 			LocationIds companionLocation = (mapshufflingmode == MapShufflingMode.Everything) ? companionsRating.First().Item1 : rng.PickFrom(companionsRating).Item1;
 
@@ -95,7 +95,7 @@ namespace FFMQLib
 
 			if (questEasyWins.Count >= 1)
 			{
-				questEasyWins.Shuffle(rng);
+				questEasyWins.ShuffleTrace(rng);
 				earlyLocations.Add(questEasyWins.First());
 			}
 
@@ -126,7 +126,6 @@ namespace FFMQLib
 			{
 				loc1 = rng.PickFrom(startingLocations);
 				loc2 = rng.PickFrom(forestaLocations);
-
 				movableLocations.Find(l => l.Origins == loc1).Destination = loc2;
 				placedLocations.Add(loc1);
 				takenLocations.Add(loc2);
@@ -149,7 +148,6 @@ namespace FFMQLib
 						!region.BarredLocations.Contains(x) &&
 						(gatingLocationPlaced ? !gatingLocationsList.Contains(x) : true)
 						).ToList();
-
 					loc1 = rng.PickFrom(regionSafeLocations);
 					loc2 = location;
 

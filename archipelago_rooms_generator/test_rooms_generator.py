@@ -1,7 +1,12 @@
-import pytest
+import contextlib
 import hashlib
+import json
+import os
+import subprocess
 from itertools import product
 from pathlib import Path
+
+import pytest
 
 from archipelago_rooms_generator.rooms_generator import (
     LogicLink,
@@ -11,6 +16,7 @@ from archipelago_rooms_generator.rooms_generator import (
     _normalize_map_shuffle_mode,
     _read_yaml,
     _seed_to_uint32,
+    _generate_rooms_yaml_with_rng,
     _select_overworld_link,
     _shuffle_battlefield_rewards,
     _companions_shuffle,
@@ -18,7 +24,100 @@ from archipelago_rooms_generator.rooms_generator import (
 )
 
 DATA_DIR = Path(__file__).resolve().parent
+REPO_ROOT = DATA_DIR.parent
+TRACE_PARITY_ENABLED = os.environ.get("FFMQR_TRACE_PARITY") == "1"
+TRACE_CASES = [
+    dict(seed="00000001", map_shuffle=1, crest_shuffle=False, battlefield_shuffle=False, companion_shuffle=0, kaeli_mom=False, overworld_shuffle=False),
+    dict(seed="00000001", map_shuffle=1, crest_shuffle=True, battlefield_shuffle=False, companion_shuffle=1, kaeli_mom=False, overworld_shuffle=False),
+    dict(seed="0000000D", map_shuffle=2, crest_shuffle=True, battlefield_shuffle=False, companion_shuffle=0, kaeli_mom=False, overworld_shuffle=False),
+    dict(seed="0000000D", map_shuffle=2, crest_shuffle=True, battlefield_shuffle=True, companion_shuffle=2, kaeli_mom=False, overworld_shuffle=True),
+    dict(seed="00000022", map_shuffle=3, crest_shuffle=True, battlefield_shuffle=False, companion_shuffle=1, kaeli_mom=True, overworld_shuffle=True),
+]
 SMOKE_OPTION_MATRIX = list(product([0, 1, 2, 3], [False, True], [False, True], [0, 1, 2], [False, True], [False, True]))
+
+
+class ReplayRng:
+    def __init__(self, trace: list[dict]):
+        self._trace = trace
+        self._index = 0
+
+    @staticmethod
+    def _field(step: dict, name: str):
+        return step.get(name, step.get(name[:1].upper() + name[1:]))
+
+    def _next(self, kind: str, count: int) -> dict:
+        assert self._index < len(self._trace), f"Replay exhausted before {kind} count={count}"
+        step = self._trace[self._index]
+        self._index += 1
+        step_kind = self._field(step, "kind")
+        step_count = self._field(step, "count")
+        assert step_kind == kind, f"Expected {kind}, got {step_kind} at trace step {self._index - 1}"
+        assert step_count == count, f"Expected count {count}, got {step_count} for {kind} at trace step {self._index - 1}"
+        return step
+
+    def between(self, low: int, high: int) -> int:
+        raise AssertionError(f"ReplayRng should not receive raw between({low}, {high}) calls")
+
+    def pick_from(self, seq: list):
+        step = self._next("pick", len(seq))
+        return seq[self._field(step, "index")]
+
+    def take_from(self, seq: list):
+        step = self._next("take", len(seq))
+        value = seq[self._field(step, "index")]
+        removed_index = seq.index(value)
+        assert removed_index == self._field(step, "removedIndex")
+        seq.remove(value)
+        return value
+
+    def shuffle(self, seq: list) -> None:
+        step = self._next("shuffle", len(seq))
+        swaps = self._field(step, "swaps")
+        assert len(swaps) == max(len(seq) - 1, 0)
+        for i, j in zip(range(len(seq) - 1, 0, -1), swaps):
+            seq[i], seq[j] = seq[j], seq[i]
+
+    def assert_exhausted(self) -> None:
+        assert self._index == len(self._trace), f"Replay stopped at {self._index} of {len(self._trace)} steps"
+
+
+def _dotnet_executable() -> str | None:
+    preferred = Path("/home/alchav/.dotnet/dotnet")
+    if preferred.exists():
+        return str(preferred)
+    fallback = subprocess.run(["bash", "-lc", "command -v dotnet"], capture_output=True, text=True, cwd=REPO_ROOT)
+    if fallback.returncode == 0:
+        return fallback.stdout.strip()
+    return None
+
+
+@contextlib.contextmanager
+def _built_trace_runner():
+    dotnet = _dotnet_executable()
+    if dotnet is None:
+        pytest.skip("dotnet is not available")
+
+    env = os.environ.copy()
+    env["DOTNET_CLI_HOME"] = "/tmp"
+    env["HOME"] = "/tmp"
+    env["NUGET_PACKAGES"] = "/home/alchav/.nuget/packages"
+
+    build = subprocess.run(
+        [dotnet, "build", "FFMQRTraceRunner/FFMQRTraceRunner.csproj", "-c", "Debug", "--configfile", "Temporary.NuGet.Config", "--nologo"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if build.returncode != 0:
+        pytest.skip(f"temporary trace runner build failed:\n{build.stdout}\n{build.stderr}")
+    yield {"dotnet": dotnet, "env": env}
+
+
+@pytest.fixture(scope="session")
+def trace_runner():
+    with _built_trace_runner() as runner:
+        yield runner
 
 
 def test_map_shuffle_aliases():
@@ -178,3 +277,43 @@ def test_overworld_shuffle_argument_changes_topology():
     no_overworld = generate_rooms_yaml(**base_kwargs, overworld_shuffle=False)
     with_overworld = generate_rooms_yaml(**base_kwargs, overworld_shuffle=True)
     assert no_overworld != with_overworld
+
+
+@pytest.mark.skipif(not TRACE_PARITY_ENABLED, reason="temporary C# trace parity harness is opt-in")
+@pytest.mark.parametrize("case", TRACE_CASES)
+def test_trace_replay_matches_csharp_logic(case, trace_runner):
+    result = subprocess.run(
+        [
+            trace_runner["dotnet"],
+            "FFMQRTraceRunner/bin/Debug/net7.0/FFMQRTraceRunner.dll",
+            case["seed"],
+            str(case["map_shuffle"]),
+            str(case["crest_shuffle"]).lower(),
+            str(case["battlefield_shuffle"]).lower(),
+            str(case["companion_shuffle"]),
+            str(case["kaeli_mom"]).lower(),
+            str(case["overworld_shuffle"]).lower(),
+        ],
+        cwd=REPO_ROOT,
+        env=trace_runner["env"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    json_line = next(line for line in reversed(result.stdout.splitlines()) if line.strip().startswith("{"))
+    payload = json.loads(json_line)
+    trace = payload.get("trace", payload.get("Trace"))
+    yaml_text = payload.get("yaml", payload.get("Yaml"))
+
+    replay_rng = ReplayRng(trace)
+    generated = _generate_rooms_yaml_with_rng(
+        rng=replay_rng,
+        map_shuffle=case["map_shuffle"],
+        crest_shuffle=case["crest_shuffle"],
+        battlefield_shuffle=case["battlefield_shuffle"],
+        companion_shuffle=case["companion_shuffle"],
+        kaeli_mom=case["kaeli_mom"],
+        overworld_shuffle=case["overworld_shuffle"],
+    )
+    replay_rng.assert_exhausted()
+    assert generated == yaml_text

@@ -1,7 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -38,7 +39,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="BigGustave" Version="1.0.6" />
     <PackageReference Include="RomUtilities" Version="3.1.0" />
     <PackageReference Include="YamlDotNet" Version="12.0.0" />
   </ItemGroup>

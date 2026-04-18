@@ -377,8 +377,8 @@ namespace FFMQLib
 			var initialProgressClusterRooms = clusterRooms.Where(x => x.Links.Count > 1 && !x.Rooms.Intersect(seedRooms).Any() && !x.Rooms.Contains(0)).Concat(seedClusterRoomsToShuffleProgress).ToList();
 			var initialDeadendClusterRooms = clusterRooms.Where(x => x.Links.Count == 1 && !x.Rooms.Intersect(seedRooms).Any() && !x.Rooms.Contains(0)).Concat(seedClusterRoomsToShuffleDeadends).ToList();
 
-			initialProgressClusterRooms.Shuffle(rng);
-			initialDeadendClusterRooms.Shuffle(rng);
+			initialProgressClusterRooms.ShuffleTrace(rng);
+			initialDeadendClusterRooms.ShuffleTrace(rng);
 
 			// Select seed rooms
 			List<ClusterRoom> coreClusterRooms = new();
@@ -489,7 +489,7 @@ namespace FFMQLib
 			var progressClusterRooms = clusterRooms.Where(x => x.Links.Count > 1 && !x.Rooms.Intersect(coreClusterRoomsIds).Any()).ToList();
 			var deadendClusterRooms = clusterRooms.Where(x => x.Links.Count == 1 && !x.Rooms.Intersect(coreClusterRoomsIds).Any()).ToList();
 
-			coreClusterRooms.Shuffle(rng);
+			coreClusterRooms.ShuffleTrace(rng);
 			coreClusterRooms = coreClusterRooms.Where(x => x.Links.Count > 0).ToList();
 
 			// Build the maps
@@ -518,12 +518,10 @@ namespace FFMQLib
 						var tempAllLinks = originCluster.Links.ToList();
 						validconfig = true;
 
-						locationProgressClusters.Shuffle(rng);
-
+						locationProgressClusters.ShuffleTrace(rng);
 						// Progress
 						foreach (var progressCluster in locationProgressClusters)
 						{
-
 							var originLinks = originCluster.Links.ToList();
 							var originLink = rng.PickFrom(originLinks);
 
@@ -544,7 +542,7 @@ namespace FFMQLib
 							continue;
 						}
 
-						deadendClusters.Shuffle(rng);
+						deadendClusters.ShuffleTrace(rng);
 
 						// Connect Deadend
 						foreach (var deadend in deadendClusters)

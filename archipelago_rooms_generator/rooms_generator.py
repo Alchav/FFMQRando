@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-import hashlib
 import random
 from typing import Any
 
@@ -190,6 +190,9 @@ GP_REWARD_ACCESS = {
     "Gp1200": "Gp1200",
 }
 STARTER_WEAPONS = {"Sword", "Axe", "Claw", "Bomb"}
+ACCESS_REQ_VALUE_NAMES = {
+    19: "Claw",
+}
 BOSSES = {
     "FlamerusRex",
     "Squidite",
@@ -236,6 +239,8 @@ class LogicLink:
     room: int
     current: dict[str, Any]
     origin: dict[str, Any]
+    exit: bool = True
+    priority_exit: bool = False
     entrance_only: bool = False
     force_dead_end: bool = False
     force_link_destination: bool = False
@@ -250,11 +255,13 @@ class ClusterRoom:
     links: list[LogicLink] = field(default_factory=list)
     size: int = 0
     location: str | None = None
+    forbidden_destinations: list[int] = field(default_factory=list)
 
     def merge(self, room: "ClusterRoom") -> None:
         self.rooms += room.rooms
         self.links += room.links
         self.size += 1
+        self.forbidden_destinations += room.forbidden_destinations
         if self.location is None:
             self.location = room.location
 
@@ -274,6 +281,79 @@ class ClusterRoom:
 
         for link in self.links:
             link.forbidden_destinations.extend(origin_link.forbidden_destinations)
+
+
+@dataclass
+class ClusterLocation:
+    rooms: list[ClusterRoom]
+    location: str | None = None
+    initial_rooms: list[int] = field(default_factory=list)
+    backup_rooms: list[ClusterRoom] = field(default_factory=list)
+
+    @property
+    def links(self) -> list[LogicLink]:
+        return [link for room in self.rooms for link in room.links]
+
+    @property
+    def odd_links(self) -> bool:
+        return any((len(room.links) % 2) == 1 for room in self.rooms)
+
+    @property
+    def dead_end_required(self) -> bool:
+        return any(any(not link.exit for link in room.links) for room in self.rooms)
+
+    def forbidden_destinations_for(self, link: LogicLink) -> list[int]:
+        origin_room = next((room for room in self.rooms if link in room.links), None)
+        if origin_room is None:
+            raise RuntimeError("Couldn't find appropriate room.")
+        return origin_room.forbidden_destinations + link.forbidden_destinations
+
+    def merge(self, target_room: ClusterRoom, origin_link: LogicLink, target_link: LogicLink) -> None:
+        origin_room = next((room for room in self.rooms if origin_link in room.links), None)
+        if origin_room is None:
+            raise RuntimeError("Couldn't find appropriate room.")
+
+        copied_target = ClusterRoom(
+            target_room.rooms.copy(),
+            target_room.links.copy(),
+            target_room.size,
+            target_room.location,
+            target_room.forbidden_destinations.copy(),
+        )
+
+        if not origin_link.exit:
+            copied_target.forbidden_destinations.extend(self.forbidden_destinations_for(origin_link))
+            self.rooms.append(copied_target)
+            copied_target.links.remove(target_link)
+            origin_room.links.remove(origin_link)
+        else:
+            origin_room.merge(copied_target)
+            origin_room.links.remove(target_link)
+            origin_room.links.remove(origin_link)
+
+    def backup_state(self) -> None:
+        self.backup_rooms = [
+            ClusterRoom(
+                room.rooms.copy(),
+                room.links.copy(),
+                room.size,
+                room.location,
+                room.forbidden_destinations.copy(),
+            )
+            for room in self.rooms
+        ]
+
+    def restore_backup(self) -> None:
+        self.rooms = [
+            ClusterRoom(
+                room.rooms.copy(),
+                room.links.copy(),
+                room.size,
+                room.location,
+                room.forbidden_destinations.copy(),
+            )
+            for room in self.backup_rooms
+        ]
 
 
 def _seed_to_uint32(seed: int | str) -> int:
@@ -411,6 +491,18 @@ def _room_by_id(rooms: list[dict[str, Any]], room_id: int) -> dict[str, Any]:
         if room["id"] == room_id:
             return room
     raise KeyError(f"Room not found: {room_id}")
+
+
+def _contains_identity(seq: list[Any], target: Any) -> bool:
+    return any(item is target for item in seq)
+
+
+def _remove_identity(seq: list[Any], target: Any) -> None:
+    for index, item in enumerate(seq):
+        if item is target:
+            del seq[index]
+            return
+    raise ValueError("Target was not found by identity")
 
 
 def _connect_link(rooms: list[dict[str, Any]], pending_links: list[tuple[int, dict[str, Any]]], link1: LogicLink, link2: LogicLink) -> None:
@@ -763,26 +855,23 @@ def _shuffle_overworld(
     safe_gold_battlefield = LOCATION_ORDER[reward_types.index("Gold") + 1]
 
     movable_origins = {entry["origins"] for entry in movable_locations}
-    shuffle_locations = [location for location in LOCATION_ORDER if location in movable_origins or location in FIXED_OVERWORLD_LOCATIONS]
-    destination_locations = list(shuffle_locations)
-    shuffle_locations = [location for location in shuffle_locations if location not in FIXED_OVERWORLD_LOCATIONS]
-    destination_locations = [location for location in destination_locations if location not in FIXED_OVERWORLD_LOCATIONS]
+    shuffle_locations = list(LOCATION_ORDER)
+    destination_locations = list(LOCATION_ORDER)
+    shuffle_locations = [location for location in shuffle_locations if location not in FIXED_OVERWORLD_LOCATIONS and location in movable_origins]
+    destination_locations = [location for location in destination_locations if location not in FIXED_OVERWORLD_LOCATIONS and location in movable_origins]
     placed_locations = set(FIXED_OVERWORLD_LOCATIONS)
     taken_locations = set(FIXED_OVERWORLD_LOCATIONS)
 
-    companions_rating = [
-        _crawl_for_companion_rating(rooms, location, kaeli_mom)
-        for location in NON_BATTLEFIELD_LOCATIONS
-        if location in movable_origins
-    ]
+    companion_candidates = [location for location in NON_BATTLEFIELD_LOCATIONS if location in shuffle_locations]
+    companions_rating = [_crawl_for_companion_rating(rooms, location, kaeli_mom) for location in companion_candidates]
+    rng.shuffle(companions_rating)
     companions_rating = [entry for entry in companions_rating if entry[1] > 0]
     if not companions_rating:
         return
-    rng.shuffle(companions_rating)
     companions_rating.sort(key=lambda entry: entry[1], reverse=True)
     companion_location = companions_rating[0][0] if _normalize_map_shuffle_mode(map_shuffle) == 3 else rng.pick_from(companions_rating)[0]
 
-    location_rating = [_crawl_for_chest_rating2(rooms, location) for location in NON_BATTLEFIELD_LOCATIONS if location in movable_origins]
+    location_rating = [_crawl_for_chest_rating2(rooms, location) for location in companion_candidates]
     location_rating = [entry for entry in location_rating if entry[0] != companion_location and entry[1] > 0]
     if not location_rating:
         return
@@ -853,7 +942,7 @@ def _shuffle_overworld(
                 for candidate in shuffle_locations
                 if candidate not in placed_locations
                 and candidate not in region["barred_locations"]
-                and (gating_location_placed or candidate not in gating_locations_list)
+                and ((not gating_location_placed) or candidate not in gating_locations_list)
             ]
             if not region_safe_locations:
                 continue
@@ -955,7 +1044,8 @@ def _crest_shuffle(rooms: list[dict[str, Any]], crest_shuffle: bool, rng: MT1933
             existing = [x for x in crest_priority if x[0] == crest1["priority"]]
             if existing:
                 crest1_crest = existing[0][1]
-                crest_tiles.remove(crest1_crest)
+                if crest1_crest in crest_tiles:
+                    crest_tiles.remove(crest1_crest)
             else:
                 crest1_crest = rng.take_from(crest_tiles)
                 crest_priority.append((crest1["priority"], crest1_crest))
@@ -1031,9 +1121,12 @@ def _floor_shuffle(
         _, l0 = _find_entrance(e0)
         logic_links.append(LogicLink(r1, l1, l0))
 
+    doom_castle_rooms = {195, 196, 197, 198, 199, 200, 201}
     room_triggers = []
     rooms_req = []
     for room in rooms:
+        if room["id"] in doom_castle_rooms:
+            continue
         for obj in room.get("game_objects", []):
             if obj.get("type") == "Trigger":
                 room_triggers.append((room["id"], obj.get("on_trigger", [])))
@@ -1059,7 +1152,9 @@ def _floor_shuffle(
 
     for link in logic_links:
         link.entrance_only = link.current["entrance"] in entrance_only
-        link.force_dead_end = link.current["entrance"] in forced_deadends or link.current["entrance"] in no_exits
+        link.force_dead_end = link.current["entrance"] in forced_deadends
+        link.exit = link.current["entrance"] not in no_exits
+        link.priority_exit = link.current["entrance"] in priority_exits
 
     for entrance, room in forbidden_destinations:
         target = next((l for l in logic_links if l.current["entrance"] == entrance), None)
@@ -1080,24 +1175,37 @@ def _floor_shuffle(
                 cluster_rooms.remove(room)
                 common[0].merge(room)
 
-    # Crawl subregion links and stamp logical location on reachable clusters.
-    room_to_cluster: dict[int, ClusterRoom] = {}
+    # Crawl from each subregion entrance and stamp the reachable dungeon clusters with that logical location.
+    room_to_clusters: dict[int, list[ClusterRoom]] = {}
     for cluster in cluster_rooms:
         for room_id in cluster.rooms:
-            room_to_cluster[room_id] = cluster
+            room_to_clusters.setdefault(room_id, []).append(cluster)
 
-    location_links = []
+    def process_cluster_room(room_id: int, processed_rooms: set[int], current_location: str) -> None:
+        current_room = _room_by_id(rooms, room_id)
+        for cluster in room_to_clusters.get(room_id, []):
+            cluster.location = current_location
+        processed_rooms.add(room_id)
+
+        child_links = sorted(current_room.get("links", []), key=lambda link: link.get("entrance", -1))
+        for child in child_links:
+            target_room = child["target_room"]
+            if target_room in processed_rooms:
+                continue
+            if set(child.get("access", [])).intersection(CRESTS_ACCESS):
+                continue
+            if _room_by_id(rooms, target_room).get("type") == "Subregion":
+                continue
+            process_cluster_room(target_room, processed_rooms, current_location)
+
+    processed_rooms: set[int] = {0}
     for room in rooms:
-        if room.get("type") == "Subregion":
-            for link in room.get("links", []):
-                location = link.get("location")
-                if location and location not in {"None", "GiantTree", "MacsShipDoom"}:
-                    location_links.append((link.get("target_room"), location))
-
-    for target_room, location in location_links:
-        cluster = room_to_cluster.get(target_room)
-        if cluster is not None and cluster.location is None:
-            cluster.location = location
+        if room.get("type") != "Subregion":
+            continue
+        for link in room.get("links", []):
+            location = link.get("location")
+            if location and location not in {"None", "GiantTree", "MacsShipDoom"}:
+                process_cluster_room(link["target_room"], processed_rooms, location)
 
     # Forced links are direct entrance-to-entrance ties in latest C# shuffling data.
     for origin_entrance, destination_entrance in forced_links:
@@ -1139,14 +1247,20 @@ def _floor_shuffle(
         if link.get("entrance", -1) >= 0 and link.get("location") not in {None, "None"}
     }
 
-    seed_rooms = [l["target_room"] for l in _room_by_id(rooms, 0)["links"] if l["target_room"] != 125]
+    seed_rooms = [
+        link["target_room"]
+        for room in rooms
+        if room.get("type") == "Subregion"
+        for link in room.get("links", [])
+        if link.get("entrance", -1) >= 0 and link["target_room"] != 125
+    ]
     seed_cluster_rooms = [x for x in cluster_rooms if set(x.rooms).intersection(seed_rooms)]
-    seed_shuffle = [x for x in seed_cluster_rooms if any(l.current["target_room"] == 0 for l in x.links)]
+    seed_shuffle = [x for x in seed_cluster_rooms if any(l.current["target_room"] in subregion_room_ids for l in x.links)]
     seed_overworld_entrance = {
         id(cluster): next((l.current["entrance"] for l in cluster.links if l.current["target_room"] == 0), None)
         for cluster in seed_shuffle
     }
-    seed_fixed = [x for x in seed_cluster_rooms if x not in seed_shuffle]
+    seed_fixed = [x for x in seed_cluster_rooms if not _contains_identity(seed_shuffle, x)]
     seed_prog = [x for x in seed_shuffle if len(x.links) > 1]
     seed_dead = [x for x in seed_shuffle if len(x.links) == 1]
 
@@ -1157,70 +1271,69 @@ def _floor_shuffle(
     rng.shuffle(init_dead)
 
     if intradungeon:
-        core_cluster_rooms = init_prog[: len(seed_prog)] + init_dead[: len(seed_dead)]
+        core_cluster_rooms = []
+        for progress_room in seed_prog:
+            valid_rooms = [
+                room
+                for room in init_prog
+                if room.location == progress_room.location and sum(1 for link in room.links if not link.forbidden_destinations) > 1
+            ]
+            core_cluster_rooms.append(rng.pick_from(valid_rooms))
+        core_cluster_rooms.extend(seed_dead)
     else:
         non_crystal_prog = [x for x in init_prog if not set(x.rooms).intersection([c["target"] for c in crystal_rooms])]
         non_crystal_dead = [x for x in init_dead if not set(x.rooms).intersection([c["target"] for c in crystal_rooms])]
         core_cluster_rooms = non_crystal_prog[: len(seed_prog)] + non_crystal_dead[: len(seed_dead)]
-    if intradungeon:
-        seed_locations = [x.location for x in seed_prog + seed_dead]
-        loc_progress = [x for x in init_prog if x.location is not None]
-        loc_dead = [x for x in init_dead if x.location is not None]
-        selected: list[ClusterRoom] = []
-        for loc in seed_locations:
-            pool = [x for x in (loc_progress + loc_dead) if x.location == loc and x not in selected]
-            if pool:
-                selected.append(rng.pick_from(pool))
-        if len(selected) == len(seed_locations):
-            core_cluster_rooms = selected
-    valid_seed_switch = [x for x in seed_shuffle if x not in core_cluster_rooms]
-    fixed_overworld_links = [
-        link
-        for cluster in seed_fixed
-        if set(cluster.rooms).intersection(subregion_room_ids)
-        for link in cluster.links
-    ]
-    switch_overworld_links = [
-        link
-        for cluster in valid_seed_switch
-        if set(cluster.rooms).intersection(subregion_room_ids)
-        for link in cluster.links
-    ]
+    valid_seed_switch = [x for x in core_cluster_rooms if not _contains_identity(seed_shuffle, x)]
+    valid_seed_fixed = [x for x in core_cluster_rooms if _contains_identity(seed_shuffle, x)]
 
-    for room in core_cluster_rooms:
-        valid_links = [x for x in room.links if not x.force_dead_end and not x.entrance_only]
-        if not valid_links:
+    for room in valid_seed_fixed:
+        core_link = next((link for link in room.links if link.current["target_room"] in subregion_room_ids), None)
+        if core_link is None:
             continue
-        priority_links = [x for x in valid_links if x.current["entrance"] in priority_exits]
-        if priority_links:
-            valid_links = priority_links
-        core_link = rng.pick_from(valid_links)
-        room.links.remove(core_link)
-
         links_from_overworld = [
             link
             for cluster in cluster_rooms
             if set(cluster.rooms).intersection(subregion_room_ids)
             for link in cluster.links
         ]
-        if not links_from_overworld:
+        ow_link = next((link for link in links_from_overworld if link.origin["entrance"] == core_link.current["entrance"]), None)
+        if ow_link is None:
+            continue
+        room.links.remove(core_link)
+        ow_cluster = next((cluster for cluster in cluster_rooms if ow_link in cluster.links), None)
+        if ow_cluster is not None:
+            ow_cluster.links.remove(ow_link)
+        _connect_overworld_link(
+            rooms,
+            pending_links,
+            room.location,
+            ow_link,
+            core_link,
+        )
+
+    valid_crystal_source = [room for room in valid_seed_switch if len(room.links) > 1]
+    for crystal in crystal_rooms:
+        links_from_overworld = [
+            link
+            for cluster in cluster_rooms
+            if set(cluster.rooms).intersection(subregion_room_ids)
+            for link in cluster.links
+        ]
+        ow_link = next((link for link in links_from_overworld if link.current.get("location") == crystal["location"]), None)
+        if ow_link is None:
             continue
 
-        preferred_entrance = seed_overworld_entrance.get(id(room))
-        crystal_source_location = next(
-            (c["location"] for c in crystal_rooms if set(room.rooms).intersection({c["target"], c["base"]})),
-            None,
-        )
-        ow_link = _select_overworld_link(
-            rng,
-            links_from_overworld,
-            room_location=room.location,
-            preferred_entrance=preferred_entrance,
-            seed_links_locations=seed_links_locations,
-            fixed_overworld_links=fixed_overworld_links,
-            switch_overworld_links=switch_overworld_links,
-            crystal_source_location=crystal_source_location,
-        )
+        progress_room = next((room for room in valid_crystal_source if room.location == crystal["location"]), None)
+        if progress_room is None:
+            progress_room = rng.pick_from(valid_crystal_source)
+
+        valid_links = [link for link in progress_room.links if link.exit]
+        priority_links = [link for link in valid_links if link.priority_exit]
+        core_link = priority_links[0] if priority_links else rng.pick_from(valid_links)
+        crystal["base"] = progress_room.rooms[0]
+
+        progress_room.links.remove(core_link)
         ow_cluster = next((cluster for cluster in cluster_rooms if ow_link in cluster.links), None)
         if ow_cluster is not None:
             ow_cluster.links.remove(ow_link)
@@ -1228,7 +1341,36 @@ def _floor_shuffle(
         _connect_overworld_link(
             rooms,
             pending_links,
-            seed_links_locations.get(ow_link.current.get("entrance")) or room.location,
+            seed_links_locations.get(ow_link.current["entrance"]),
+            ow_link,
+            core_link,
+        )
+        if _contains_identity(valid_crystal_source, progress_room):
+            _remove_identity(valid_crystal_source, progress_room)
+        if _contains_identity(valid_seed_switch, progress_room):
+            _remove_identity(valid_seed_switch, progress_room)
+
+    for room in valid_seed_switch:
+        valid_links = [link for link in room.links if link.exit]
+        priority_links = [link for link in valid_links if link.priority_exit]
+        core_link = priority_links[0] if priority_links else rng.pick_from(valid_links)
+        links_from_overworld = [
+            link
+            for cluster in cluster_rooms
+            if set(cluster.rooms).intersection(subregion_room_ids)
+            for link in cluster.links
+        ]
+        ow_link = next((link for link in links_from_overworld if link.current.get("location") == room.location), None)
+        if ow_link is None:
+            ow_link = rng.pick_from(links_from_overworld)
+        room.links.remove(core_link)
+        ow_cluster = next((cluster for cluster in cluster_rooms if ow_link in cluster.links), None)
+        if ow_cluster is not None:
+            ow_cluster.links.remove(ow_link)
+        _connect_overworld_link(
+            rooms,
+            pending_links,
+            seed_links_locations.get(ow_link.current["entrance"]),
             ow_link,
             core_link,
         )
@@ -1254,81 +1396,91 @@ def _floor_shuffle(
                 continue
 
             valid_pairs: list[tuple[LogicLink, LogicLink]] | None = None
-            chosen_progress: list[ClusterRoom] = []
-            chosen_dead: list[ClusterRoom] = []
+            chosen_progress = loc_progress.copy()
+            chosen_dead = loc_dead.copy()
 
             for _attempt in range(120):
-                working_links = origin_room.links.copy()
+                origin_cluster = ClusterLocation(
+                    rooms=[
+                        ClusterRoom(
+                            origin_room.rooms.copy(),
+                            origin_room.links.copy(),
+                            origin_room.size,
+                            origin_room.location,
+                            origin_room.forbidden_destinations.copy(),
+                        )
+                    ],
+                    location=origin_room.location,
+                    initial_rooms=origin_room.rooms.copy(),
+                )
                 pairs: list[tuple[LogicLink, LogicLink]] = []
                 valid = True
 
-                chosen_progress = loc_progress.copy()
-                chosen_dead = loc_dead.copy()
                 rng.shuffle(chosen_progress)
-                rng.shuffle(chosen_dead)
 
                 # Progress placement
                 for dest in chosen_progress:
-                    origin_candidates = [l for l in working_links if not l.force_link_destination]
+                    origin_candidates = origin_cluster.links.copy()
                     if not origin_candidates:
                         valid = False
                         break
                     origin_link = rng.pick_from(origin_candidates)
 
-                    if set(dest.rooms).intersection(origin_link.forbidden_destinations):
+                    if set(dest.rooms).intersection(origin_cluster.forbidden_destinations_for(origin_link)):
                         valid = False
                         break
 
-                    dest_candidates = [l for l in dest.links if not l.entrance_only and not l.force_dead_end and not l.force_link_origin and not l.force_link_destination]
+                    dest_candidates = [l for l in dest.links if l.exit]
                     if not dest_candidates:
                         valid = False
                         break
-                    priority_dest = [l for l in dest_candidates if l.current["entrance"] in priority_exits]
-                    if priority_dest:
-                        dest_candidates = priority_dest
-                    dest_link = rng.pick_from(dest_candidates)
+                    priority_dest = next((l for l in dest_candidates if l.priority_exit), None)
+                    dest_link = priority_dest if priority_dest is not None else rng.pick_from(dest_candidates)
 
                     pairs.append((origin_link, dest_link))
-                    working_links.remove(origin_link)
-
-                    # Merge destination links into working pool with C#-like inherited restrictions.
-                    for merged in [l for l in dest.links if l is not dest_link]:
-                        merged.forbidden_destinations.extend(origin_link.forbidden_destinations)
-                        if origin_link.force_dead_end and not merged.force_link_origin and not merged.force_link_destination:
-                            merged.force_dead_end = True
-                        working_links.append(merged)
+                    origin_cluster.merge(dest, origin_link, dest_link)
 
                 if not valid:
                     continue
 
                 # Deadend placement
+                rng.shuffle(chosen_dead)
                 for dest in chosen_dead:
-                    origin_candidates = [l for l in working_links if l.force_dead_end]
-                    if not origin_candidates:
-                        origin_candidates = working_links
-                    if not origin_candidates or not dest.links:
+                    available_locations = [room for room in origin_cluster.rooms if room.links]
+                    odd_links_locations = [room for room in origin_cluster.rooms if (len(room.links) % 2) == 1]
+                    no_exit_locations = [room for room in origin_cluster.rooms if any(not link.exit for link in room.links)]
+                    no_exit = False
+                    if no_exit_locations:
+                        available_locations = no_exit_locations
+                        no_exit = True
+                    elif odd_links_locations:
+                        available_locations = odd_links_locations
+
+                    if not available_locations or not dest.links:
                         valid = False
                         break
-                    origin_link = rng.pick_from(origin_candidates)
-                    if set(dest.rooms).intersection(origin_link.forbidden_destinations):
+                    origin_location = rng.pick_from(available_locations)
+                    origin_links = [link for link in origin_location.links if not link.exit] if no_exit else origin_location.links
+                    origin_link = rng.pick_from(origin_links)
+                    if set(dest.rooms).intersection(origin_cluster.forbidden_destinations_for(origin_link)):
                         valid = False
                         break
                     dest_link = rng.pick_from(dest.links)
                     pairs.append((origin_link, dest_link))
-                    working_links.remove(origin_link)
-                    working_links.extend([l for l in dest.links if l is not dest_link])
+                    origin_cluster.merge(dest, origin_link, dest_link)
 
                 if not valid:
                     continue
 
                 # Validate leftovers (no forced deadends, even links), then pair leftovers.
-                if any(l.force_dead_end for l in working_links) or (len(working_links) % 2 == 1):
+                if origin_cluster.odd_links or origin_cluster.dead_end_required:
                     continue
 
-                while working_links:
-                    first = rng.take_from(working_links)
-                    second = rng.take_from(working_links)
-                    pairs.append((first, second))
+                for room in origin_cluster.rooms:
+                    while room.links:
+                        first = rng.take_from(room.links)
+                        second = rng.take_from(room.links)
+                        pairs.append((first, second))
 
                 valid_pairs = pairs
                 break
@@ -1340,12 +1492,12 @@ def _floor_shuffle(
                 _connect_link(rooms, pending_links, link_a, link_b)
 
             for dest in chosen_progress:
-                if dest in progress_cluster_rooms:
-                    progress_cluster_rooms.remove(dest)
+                if _contains_identity(progress_cluster_rooms, dest):
+                    _remove_identity(progress_cluster_rooms, dest)
                     origin_room.merge(dest)
             for dest in chosen_dead:
-                if dest in deadend_cluster_rooms:
-                    deadend_cluster_rooms.remove(dest)
+                if _contains_identity(deadend_cluster_rooms, dest):
+                    _remove_identity(deadend_cluster_rooms, dest)
                     origin_room.merge(dest)
 
         for room_id, link in pending_links:
@@ -1363,171 +1515,223 @@ def _floor_shuffle(
                     link["location_slot"] = fallback_location
         return
 
-    guard = 0
-    progress_downgrade_attempts = 0
+    origin_locations = [
+        ClusterLocation(
+            rooms=[
+                ClusterRoom(
+                    cluster.rooms.copy(),
+                    cluster.links.copy(),
+                    cluster.size,
+                    cluster.location,
+                    cluster.forbidden_destinations.copy(),
+                )
+            ],
+            location=cluster.location,
+            initial_rooms=cluster.rooms.copy(),
+        )
+        for cluster in core_cluster_rooms
+    ]
+
+    mac_ship_merging_count = 0
+    mac_ship = next((location for location in origin_locations if mac_ship_deck in [room_id for room in location.rooms for room_id in room.rooms]), None)
+    if mac_ship is not None:
+        for room in mac_ship.rooms:
+            room.forbidden_destinations.extend(mac_ship_barred)
+
+    sky_crystal_room_placed = False
+    sky_crystal = crystal_rooms[3]
+    sky_crystal_room = next((cluster for cluster in progress_cluster_rooms if sky_crystal["target"] in cluster.rooms), None)
+    if sky_crystal_room is not None:
+        _remove_identity(progress_cluster_rooms, sky_crystal_room)
+    else:
+        sky_crystal_room_placed = True
+
     while progress_cluster_rooms:
-        guard += 1
-        if guard > 10000:
-            if progress_downgrade_attempts < 2:
-                progress_downgrade_attempts += 1
-                deadend_cluster_rooms.extend(progress_cluster_rooms)
-                progress_cluster_rooms = []
-                break
-            deadend_cluster_rooms.extend(progress_cluster_rooms)
-            progress_cluster_rooms = []
-            break
-        origin_room = rng.pick_from(core_cluster_rooms)
-        origin_links = [x for x in origin_room.links if not x.force_link_destination]
-        if not origin_links:
-            continue
-        origin_link = rng.pick_from(origin_links)
+        valid_origins = origin_locations
+        if mac_ship is not None and mac_ship_merging_count >= (mac_ship_max_size - 2):
+            valid_origins = [location for location in origin_locations if location is not mac_ship]
+        origin_room = rng.pick_from(valid_origins)
+        origin_link = rng.pick_from(origin_room.links)
 
-        dest_rooms = [
-            x
-            for x in progress_cluster_rooms
-            if (not intradungeon) or (x.location is None or origin_room.location is None or x.location == origin_room.location)
-            if not set(x.rooms).intersection(origin_link.forbidden_destinations)
-            and ((not origin_link.force_dead_end) or ((not set(x.rooms).intersection(crest_rooms)) and (len(x.links) % 2 == 0)))
-            and ((mac_ship_deck not in origin_room.rooms) or (not set(x.rooms).intersection(mac_ship_barred)))
+        destination_rooms = [
+            cluster
+            for cluster in progress_cluster_rooms
+            if not set(cluster.rooms).intersection(origin_room.forbidden_destinations_for(origin_link))
         ]
-        if not dest_rooms or (mac_ship_deck in origin_room.rooms and origin_room.size >= mac_ship_max_size):
+        if not destination_rooms:
             continue
 
-        dest = rng.pick_from(dest_rooms)
-        progress_cluster_rooms.remove(dest)
+        destination_room = rng.pick_from(destination_rooms)
+        _remove_identity(progress_cluster_rooms, destination_room)
 
-        dest_links = [x for x in dest.links if not x.entrance_only and not x.force_dead_end]
-        priority_dest_links = [x for x in dest_links if x.current["entrance"] in priority_exits]
-        if priority_dest_links:
-            dest_links = priority_dest_links
-        if not dest_links:
-            progress_cluster_rooms.append(dest)
-            continue
-        dest_link = rng.pick_from(dest_links)
+        priority_link = next((link for link in destination_room.links if link.priority_exit), None)
+        exit_links = [link for link in destination_room.links if link.exit]
+        destination_link = priority_link if priority_link is not None else rng.pick_from(exit_links)
 
-        origin_room.links.remove(origin_link)
-        dest.links.remove(dest_link)
-        _connect_link(rooms, pending_links, origin_link, dest_link)
-        dest.update_links(origin_link, rng)
-        origin_room.merge(dest)
+        _connect_link(rooms, pending_links, origin_link, destination_link)
+        origin_room.merge(destination_room, origin_link, destination_link)
+        if origin_room is mac_ship:
+            mac_ship_merging_count += 1
 
-    sky_target = None
-    if not intradungeon:
-        # Place sky crystal room (Pazuzu) similar to C# handling as a dedicated progress placement.
-        sky_room = next(c for c in crystal_rooms if c["location"] == "PazuzusTower")
-        sky_target, sky_base = sky_room["target"], sky_room["base"]
-        sky_cluster = next((x for x in progress_cluster_rooms if sky_target in x.rooms), None)
-        if sky_cluster is not None:
-            progress_cluster_rooms.remove(sky_cluster)
-            sky_origin = next(
-                (o for o in core_cluster_rooms if (o.location == sky_room["location"] or sky_base in o.rooms) and o.links),
-                None,
-            )
-            if sky_origin is not None and sky_cluster.links:
-                origin_link = rng.pick_from(sky_origin.links)
-                sky_origin.links.remove(origin_link)
-                dest_link = rng.take_from(sky_cluster.links)
-                _connect_link(rooms, pending_links, origin_link, dest_link)
-                sky_origin.merge(sky_cluster)
-
-    # Place crystal deadends at their respective base locations before generic deadend placement.
-    for crystal in crystal_rooms:
-        if crystal["target"] == sky_target:
-            continue
-        crystal_cluster = next((x for x in deadend_cluster_rooms if crystal["target"] in x.rooms), None)
-        if crystal_cluster is None:
-            continue
-        deadend_cluster_rooms.remove(crystal_cluster)
-        crystal_origin = next(
-            (o for o in core_cluster_rooms if (o.location == crystal["location"] or crystal["base"] in o.rooms) and o.links),
+    if not sky_crystal_room_placed and sky_crystal_room is not None:
+        sky_location = next(
+            (
+                location
+                for location in origin_locations
+                if any(sky_crystal["base"] in room.rooms for room in location.rooms)
+            ),
             None,
         )
-        if crystal_origin is None or not crystal_cluster.links:
-            deadend_cluster_rooms.append(crystal_cluster)
+        if sky_location is not None:
+            destination_link = rng.pick_from(sky_crystal_room.links)
+            origin_link = rng.pick_from(sky_location.links)
+            _connect_link(rooms, pending_links, origin_link, destination_link)
+            sky_location.merge(sky_crystal_room, origin_link, destination_link)
+
+    crystal_clusters = [
+        cluster
+        for cluster in deadend_cluster_rooms
+        if set(cluster.rooms).intersection([crystal["target"] for crystal in crystal_rooms])
+    ]
+    deadend_cluster_rooms = [cluster for cluster in deadend_cluster_rooms if not _contains_identity(crystal_clusters, cluster)]
+
+    for crystal_cluster in crystal_clusters:
+        crystal_room = next(crystal for crystal in crystal_rooms if crystal["target"] in crystal_cluster.rooms)
+        origin_room = next(
+            location
+            for location in origin_locations
+            if any(crystal_room["base"] in room.rooms for room in location.rooms)
+        )
+        origin_link = rng.pick_from(origin_room.links)
+        destination_link = rng.pick_from(crystal_cluster.links)
+        _connect_link(rooms, pending_links, origin_link, destination_link)
+        origin_room.merge(crystal_cluster, origin_link, destination_link)
+
+    crest_clusters = [cluster for cluster in deadend_cluster_rooms if set(cluster.rooms).intersection(crest_rooms)]
+    deadend_cluster_rooms = [cluster for cluster in deadend_cluster_rooms if not _contains_identity(crest_clusters, cluster)]
+
+    while crest_clusters:
+        valid_origins = [
+            location
+            for location in origin_locations
+            if location is not mac_ship and any(link.exit for link in location.rooms[0].links)
+        ]
+        origin_room = rng.pick_from(valid_origins)
+        origin_links = [link for link in origin_room.rooms[0].links if link.exit]
+        origin_link = rng.pick_from(origin_links)
+
+        destination_rooms = [
+            cluster
+            for cluster in crest_clusters
+            if not set(cluster.rooms).intersection(origin_room.forbidden_destinations_for(origin_link))
+        ]
+        if not destination_rooms:
             continue
-        origin_link = rng.pick_from(crystal_origin.links)
-        crystal_origin.links.remove(origin_link)
-        dest_link = rng.take_from(crystal_cluster.links)
-        _connect_link(rooms, pending_links, origin_link, dest_link)
-        crystal_origin.merge(crystal_cluster)
 
-    for room in core_cluster_rooms:
-        dead_links = [x for x in room.links if x.force_dead_end]
-        while dead_links:
-            origin_link = dead_links.pop(0)
-            dest_rooms = [x for x in deadend_cluster_rooms if not set(x.rooms).intersection(crest_rooms) and not set(x.rooms).intersection(origin_link.forbidden_destinations) and ((mac_ship_deck not in room.rooms) or not set(x.rooms).intersection(mac_ship_barred))]
-            if not dest_rooms:
-                continue
-            room.links.remove(origin_link)
-            dest = rng.pick_from(dest_rooms)
-            dest_link = rng.take_from(dest.links)
-            deadend_cluster_rooms.remove(dest)
-            _connect_link(rooms, pending_links, origin_link, dest_link)
-            room.merge(dest)
+        destination_room = rng.pick_from(destination_rooms)
+        _remove_identity(crest_clusters, destination_room)
+        destination_link = rng.pick_from(destination_room.links)
+        _connect_link(rooms, pending_links, origin_link, destination_link)
+        origin_room.merge(destination_room, origin_link, destination_link)
 
-        if len(room.links) % 2 == 1:
-            origin_link = rng.pick_from(room.links)
-            dest_rooms = [x for x in deadend_cluster_rooms if not set(x.rooms).intersection(origin_link.forbidden_destinations) and ((mac_ship_deck not in room.rooms) or not set(x.rooms).intersection(mac_ship_barred))]
-            if not dest_rooms:
-                continue
-            dest = rng.pick_from(dest_rooms)
-            dest_link = rng.take_from(dest.links)
-            deadend_cluster_rooms.remove(dest)
-            room.links.remove(origin_link)
-            _connect_link(rooms, pending_links, origin_link, dest_link)
-            room.merge(dest)
+    dead_end_link_pairs: list[tuple[LogicLink, LogicLink]] = []
+    valid_deadends = False
+    for location in origin_locations:
+        location.backup_state()
 
-    if len(deadend_cluster_rooms) % 2 == 1:
+    while not valid_deadends:
+        for location in origin_locations:
+            location.restore_backup()
+        deadend_rooms_to_process = deadend_cluster_rooms.copy()
+        dead_end_link_pairs = []
+        deadend_insanity = 0
+        abort_run = False
+
+        while deadend_rooms_to_process:
+            remove_mac_ship = (
+                mac_ship is not None
+                and mac_ship_merging_count >= mac_ship_max_size
+                and not mac_ship.odd_links
+                and not mac_ship.dead_end_required
+            )
+            available_locations = [
+                location
+                for location in origin_locations
+                if any(room.links for room in location.rooms) and (not remove_mac_ship or location is not mac_ship)
+            ]
+            odd_links_locations = [location for location in available_locations if location.odd_links]
+            no_exit_locations = [location for location in available_locations if location.dead_end_required]
+            no_exit = False
+            odd_links = False
+
+            if no_exit_locations:
+                available_locations = no_exit_locations
+                no_exit = True
+            elif odd_links_locations:
+                available_locations = odd_links_locations
+                odd_links = True
+
+            origin_room = rng.pick_from(available_locations)
+            origin_links = origin_room.links
+            if no_exit:
+                origin_links = [link for link in origin_room.links if not link.exit]
+            elif odd_links:
+                origin_links = [link for room in origin_room.rooms if (len(room.links) % 2) == 1 for link in room.links]
+
+            origin_link = rng.pick_from(origin_links)
+            destination_rooms = [
+                cluster
+                for cluster in deadend_rooms_to_process
+                if not set(cluster.rooms).intersection(origin_room.forbidden_destinations_for(origin_link))
+            ]
+            mac_ship_allowed = [cluster for cluster in destination_rooms if not set(cluster.rooms).intersection(mac_ship_barred)]
+            destination_rooms = mac_ship_allowed if mac_ship_allowed else destination_rooms
+
+            if not destination_rooms:
+                deadend_insanity += 1
+                if deadend_insanity > 20:
+                    abort_run = True
+                else:
+                    continue
+
+            if abort_run:
+                break
+
+            destination_room = rng.pick_from(destination_rooms)
+            _remove_identity(deadend_rooms_to_process, destination_room)
+            destination_link = rng.pick_from(destination_room.links)
+            dead_end_link_pairs.append((origin_link, destination_link))
+            origin_room.merge(destination_room, origin_link, destination_link)
+            if origin_room is mac_ship:
+                mac_ship_merging_count += 1
+
+        if not deadend_rooms_to_process:
+            valid_deadends = True
+
+    for link_a, link_b in dead_end_link_pairs:
+        _connect_link(rooms, pending_links, link_a, link_b)
+
+    orphaned_rooms = [room for location in origin_locations for room in location.rooms if (len(room.links) % 2) == 1]
+    if len(orphaned_rooms) == 1:
         origin_link = {"target_room": 500, "entrance": 0, "teleporter": [141, 1], "access": []}
         destination_link = {"target_room": 0, "entrance": 481, "teleporter": [0, 10], "access": []}
-        deadend_cluster_rooms.append(ClusterRoom(rooms=[500], links=[LogicLink(500, destination_link, origin_link)]))
+        dummy_room = ClusterRoom([500], [LogicLink(500, destination_link, origin_link)], location=None)
+        orphaned_room = orphaned_rooms[0]
+        orphaned_location = next(location for location in origin_locations if orphaned_room in location.rooms)
+        orphaned_link = rng.pick_from(orphaned_room.links)
+        dummy_room_link = dummy_room.links[0]
+        _connect_link(rooms, pending_links, orphaned_link, dummy_room_link)
+        orphaned_location.merge(dummy_room, orphaned_link, dummy_room_link)
         rooms.append({"name": "Dummy Room", "id": 500, "game_objects": [], "links": []})
+    elif len(orphaned_rooms) > 1:
+        raise RuntimeError("There's invalid loops left")
 
-    mac_exception_count = 0
-    while deadend_cluster_rooms:
-        if len(deadend_cluster_rooms) < 2:
-            break
-        rng.shuffle(deadend_cluster_rooms)
-        destination_rooms = [deadend_cluster_rooms[0], deadend_cluster_rooms[1]]
-
-        origin_candidates = [
-            x
-            for x in core_cluster_rooms
-            if x.links
-        ]
-        no_exit_candidates = [x for x in origin_candidates if any(l.force_dead_end for l in x.links)]
-        odd_candidates = [x for x in origin_candidates if len(x.links) % 2 == 1]
-        unfilled = [
-            x
-            for x in (no_exit_candidates or odd_candidates or origin_candidates)
-            if not set([d for l in x.links for d in l.forbidden_destinations]).intersection([rid for d in destination_rooms for rid in d.rooms])
-            and ((not mac_ship_barred.intersection([rid for d in destination_rooms for rid in d.rooms])) or (mac_ship_deck not in x.rooms))
-        ]
-        if not unfilled:
-            mac_exception_count += 1
-            if mac_exception_count > 50:
-                break
-            continue
-
-        origin_room = rng.pick_from(unfilled)
-        deadend_cluster_rooms.remove(destination_rooms[0])
-        deadend_cluster_rooms.remove(destination_rooms[1])
-
-        for dest in destination_rooms:
-            origin_link_pool = [l for l in origin_room.links if l.force_dead_end]
-            if not origin_link_pool:
-                origin_link_pool = origin_room.links
-            origin_link = rng.pick_from(origin_link_pool)
-            origin_room.links.remove(origin_link)
-            dest_link = rng.take_from(dest.links)
-            _connect_link(rooms, pending_links, origin_link, dest_link)
-            origin_room.merge(dest)
-
-    for room in core_cluster_rooms:
-        while room.links:
-            if len(room.links) % 2 == 1:
-                break
-            _connect_link(rooms, pending_links, rng.take_from(room.links), rng.take_from(room.links))
+    for location in origin_locations:
+        for room in location.rooms:
+            while room.links:
+                if (len(room.links) % 2) == 1:
+                    raise RuntimeError("Floor Shuffle: Gap Connection Error")
+                _connect_link(rooms, pending_links, rng.take_from(room.links), rng.take_from(room.links))
 
     for room_id, link in pending_links:
         _room_by_id(rooms, room_id)["links"].append(link)
@@ -1545,9 +1749,53 @@ def _floor_shuffle(
 
 
 def _yaml_quote(s: str) -> str:
-    if s == "" or any(ch in s for ch in [":", "#", "[", "]", "{", "}", "\n", "\"", "'"]) or s.strip() != s:
+    if s == "" or any(ch in s for ch in [":", "#", "[", "]", "{", "}", "\n", "\""]) or s.strip() != s:
         return json.dumps(s)
     return s
+
+
+def _normalize_yaml_rooms(rooms: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized_rooms: list[dict[str, Any]] = []
+    for room in rooms:
+        normalized_objects = []
+        for obj in room.get("game_objects", []):
+            normalized_objects.append(
+                {
+                    "object_id": obj.get("object_id", 0),
+                    "type": obj.get("type"),
+                    "on_trigger": [ACCESS_REQ_VALUE_NAMES.get(value, value) for value in obj.get("on_trigger", [])],
+                    "access": [ACCESS_REQ_VALUE_NAMES.get(value, value) for value in obj.get("access", [])],
+                    "location": obj.get("location", "None"),
+                    "location_slot": obj.get("location_slot", obj.get("location", "None")),
+                    "name": obj.get("name"),
+                }
+            )
+
+        normalized_links = []
+        for link in room.get("links", []):
+            normalized_links.append(
+                {
+                    "target_room": link.get("target_room"),
+                    "entrance": link.get("entrance", -1),
+                    "access": [ACCESS_REQ_VALUE_NAMES.get(value, value) for value in link.get("access", [])],
+                    "location": link.get("location", "None"),
+                    "location_slot": link.get("location_slot", link.get("location", "None")),
+                    "teleporter": list(link.get("teleporter", [0, 0])),
+                }
+            )
+
+        normalized_rooms.append(
+            {
+                "name": room.get("name"),
+                "id": room.get("id"),
+                "game_objects": normalized_objects,
+                "links": normalized_links,
+                "type": room.get("type") or ("Overworld" if room.get("id") == 0 else "Subregion" if room.get("id", 0) >= 220 else "Dungeon"),
+                "location": room.get("location", "None"),
+                "region": room.get("region", "Foresta"),
+            }
+        )
+    return normalized_rooms
 
 
 def _to_yaml(obj: Any, indent: int = 0) -> str:
@@ -1556,7 +1804,13 @@ def _to_yaml(obj: Any, indent: int = 0) -> str:
         lines = []
         for k, v in obj.items():
             key = _yaml_quote(str(k))
-            if isinstance(v, (dict, list)):
+            if isinstance(v, list):
+                if not v:
+                    lines.append(f"{sp}{key}: []")
+                else:
+                    lines.append(f"{sp}{key}:")
+                    lines.append(_to_yaml(v, indent))
+            elif isinstance(v, dict):
                 lines.append(f"{sp}{key}:")
                 lines.append(_to_yaml(v, indent + 2))
             else:
@@ -1598,8 +1852,29 @@ def generate_rooms_yaml(
 
     Parameters are API-compatible and mutate the same room data dimensions as the API.
     """
-    rooms = _read_yaml(ROOMS_PATH)
     rng = MT19337Compat(_seed_to_uint32(seed))
+    return _generate_rooms_yaml_with_rng(
+        rng=rng,
+        map_shuffle=map_shuffle,
+        crest_shuffle=crest_shuffle,
+        battlefield_shuffle=battlefield_shuffle,
+        companion_shuffle=companion_shuffle,
+        kaeli_mom=kaeli_mom,
+        overworld_shuffle=overworld_shuffle,
+    )
+
+
+def _generate_rooms_yaml_with_rng(
+    *,
+    rng: Any,
+    map_shuffle: str | int,
+    crest_shuffle: bool,
+    battlefield_shuffle: bool,
+    companion_shuffle: int | bool,
+    kaeli_mom: bool,
+    overworld_shuffle: bool,
+) -> str:
+    rooms = _read_yaml(ROOMS_PATH)
     battlefield_rewards = _shuffle_battlefield_rewards(rooms, battlefield_shuffle=battlefield_shuffle, rng=rng)
     _companions_shuffle(rooms, companion_shuffle=companion_shuffle, kaeli_mom=kaeli_mom, rng=rng)
 
@@ -1614,7 +1889,7 @@ def generate_rooms_yaml(
         rng=rng,
     )
 
-    return _to_yaml(rooms)
+    return _to_yaml(_normalize_yaml_rooms(rooms)) + "\n"
 
 
 if __name__ == "__main__":
