@@ -1242,7 +1242,8 @@ def _floor_shuffle(
     core_cluster_rooms = [x for x in core_cluster_rooms if x.links]
 
     if intradungeon:
-        # Attempt C#-like per-location valid assembly loop for intradungeon mode.
+        # C# intradungeon mode resolves everything in this branch and does not
+        # fall through to the non-intradungeon progress/deadend pipeline.
         for origin_room in core_cluster_rooms:
             if not origin_room.links or origin_room.location is None:
                 continue
@@ -1347,17 +1348,26 @@ def _floor_shuffle(
                     deadend_cluster_rooms.remove(dest)
                     origin_room.merge(dest)
 
+        for room_id, link in pending_links:
+            _room_by_id(rooms, room_id)["links"].append(link)
+
+        for room in rooms:
+            if room.get("type") != "Subregion":
+                continue
+            for link in room.get("links", []):
+                if link.get("entrance", -1) < 0 or link.get("location") not in (None, "None"):
+                    continue
+                fallback_location = seed_links_locations.get(link.get("entrance"))
+                if fallback_location not in (None, "None"):
+                    link["location"] = fallback_location
+                    link["location_slot"] = fallback_location
+        return
+
     guard = 0
-    intradungeon_progress_retries = 0
     progress_downgrade_attempts = 0
     while progress_cluster_rooms:
         guard += 1
         if guard > 10000:
-            if intradungeon and intradungeon_progress_retries < 3:
-                intradungeon_progress_retries += 1
-                guard = 0
-                rng.shuffle(progress_cluster_rooms)
-                continue
             if progress_downgrade_attempts < 2:
                 progress_downgrade_attempts += 1
                 deadend_cluster_rooms.extend(progress_cluster_rooms)
@@ -1366,14 +1376,7 @@ def _floor_shuffle(
             deadend_cluster_rooms.extend(progress_cluster_rooms)
             progress_cluster_rooms = []
             break
-        if intradungeon:
-            same_loc_origins = [
-                r for r in core_cluster_rooms
-                if r.links and any(d.location is None or r.location is None or d.location == r.location for d in progress_cluster_rooms)
-            ]
-            origin_room = rng.pick_from(same_loc_origins if same_loc_origins else core_cluster_rooms)
-        else:
-            origin_room = rng.pick_from(core_cluster_rooms)
+        origin_room = rng.pick_from(core_cluster_rooms)
         origin_links = [x for x in origin_room.links if not x.force_link_destination]
         if not origin_links:
             continue
@@ -1453,8 +1456,6 @@ def _floor_shuffle(
         while dead_links:
             origin_link = dead_links.pop(0)
             dest_rooms = [x for x in deadend_cluster_rooms if not set(x.rooms).intersection(crest_rooms) and not set(x.rooms).intersection(origin_link.forbidden_destinations) and ((mac_ship_deck not in room.rooms) or not set(x.rooms).intersection(mac_ship_barred))]
-            if intradungeon:
-                dest_rooms = [x for x in dest_rooms if x.location is None or room.location is None or x.location == room.location]
             if not dest_rooms:
                 continue
             room.links.remove(origin_link)
@@ -1467,8 +1468,6 @@ def _floor_shuffle(
         if len(room.links) % 2 == 1:
             origin_link = rng.pick_from(room.links)
             dest_rooms = [x for x in deadend_cluster_rooms if not set(x.rooms).intersection(origin_link.forbidden_destinations) and ((mac_ship_deck not in room.rooms) or not set(x.rooms).intersection(mac_ship_barred))]
-            if intradungeon:
-                dest_rooms = [x for x in dest_rooms if x.location is None or room.location is None or x.location == room.location]
             if not dest_rooms:
                 continue
             dest = rng.pick_from(dest_rooms)
@@ -1485,7 +1484,6 @@ def _floor_shuffle(
         rooms.append({"name": "Dummy Room", "id": 500, "game_objects": [], "links": []})
 
     mac_exception_count = 0
-    intradungeon_deadend_retries = 0
     while deadend_cluster_rooms:
         if len(deadend_cluster_rooms) < 2:
             break
@@ -1508,11 +1506,6 @@ def _floor_shuffle(
         if not unfilled:
             mac_exception_count += 1
             if mac_exception_count > 50:
-                if intradungeon and intradungeon_deadend_retries < 3:
-                    intradungeon_deadend_retries += 1
-                    mac_exception_count = 0
-                    rng.shuffle(deadend_cluster_rooms)
-                    continue
                 break
             continue
 
