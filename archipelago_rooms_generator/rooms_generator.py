@@ -16,11 +16,6 @@ ENTRANCE_PAIRS_PATH = DATA_DIR / "entrancespairs.json"
 SHUFFLING_DATA_PATH = DATA_DIR / "shufflingdata.json"
 
 CRESTS_ACCESS = {"LibraCrest", "GeminiCrest", "MobiusCrest"}
-ITEM_ACCESS_REQ = {
-    "LibraCrest": ["LibraCrest"],
-    "GeminiCrest": ["GeminiCrest"],
-    "MobiusCrest": ["MobiusCrest"],
-}
 
 MAP_SHUFFLE_DUNGEON_MODES = {"DungeonsInternal", "DungeonsMixed", "Everything", 1, 2, 3}
 LOCATION_ORDER = [
@@ -1064,8 +1059,8 @@ def _crest_shuffle(rooms: list[dict[str, Any]], crest_shuffle: bool, rng: MT1933
         crest1room["links"].remove(crest1link)
         crest2room["links"].remove(crest2link)
 
-        access1 = [a for a in crest1link.get("access", []) if a not in CRESTS_ACCESS] + ITEM_ACCESS_REQ[crest1_crest]
-        access2 = [a for a in crest2link.get("access", []) if a not in CRESTS_ACCESS] + ITEM_ACCESS_REQ[crest2_crest]
+        access1 = [a for a in crest1link.get("access", []) if a not in CRESTS_ACCESS] + [crest1_crest]
+        access2 = [a for a in crest2link.get("access", []) if a not in CRESTS_ACCESS] + [crest2_crest]
 
         new_link_to_process.append((crest1room["id"], {"target_room": crest2room["id"], "entrance": crest1link["entrance"], "teleporter": crest2["origins"], "access": access1}))
         new_link_to_process.append((crest2room["id"], {"target_room": crest1room["id"], "entrance": crest2link["entrance"], "teleporter": crest1["origins"], "access": access2}))
@@ -1748,12 +1743,6 @@ def _floor_shuffle(
                 link["location_slot"] = fallback_location
 
 
-def _yaml_quote(s: str) -> str:
-    if s == "" or any(ch in s for ch in [":", "#", "[", "]", "{", "}", "\n", "\""]) or s.strip() != s:
-        return json.dumps(s)
-    return s
-
-
 def _normalize_yaml_rooms(rooms: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized_rooms: list[dict[str, Any]] = []
     for room in rooms:
@@ -1798,46 +1787,6 @@ def _normalize_yaml_rooms(rooms: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return normalized_rooms
 
 
-def _to_yaml(obj: Any, indent: int = 0) -> str:
-    sp = " " * indent
-    if isinstance(obj, dict):
-        lines = []
-        for k, v in obj.items():
-            key = _yaml_quote(str(k))
-            if isinstance(v, list):
-                if not v:
-                    lines.append(f"{sp}{key}: []")
-                else:
-                    lines.append(f"{sp}{key}:")
-                    lines.append(_to_yaml(v, indent))
-            elif isinstance(v, dict):
-                lines.append(f"{sp}{key}:")
-                lines.append(_to_yaml(v, indent + 2))
-            else:
-                lines.append(f"{sp}{key}: {_to_yaml(v, 0).strip()}")
-        return "\n".join(lines)
-    if isinstance(obj, list):
-        if not obj:
-            return f"{sp}[]"
-        lines = []
-        for item in obj:
-            if isinstance(item, (dict, list)):
-                rendered = _to_yaml(item, indent + 2)
-                first, *rest = rendered.splitlines()
-                lines.append(f"{sp}- {first.strip()}")
-                lines.extend(rest)
-            else:
-                lines.append(f"{sp}- {_to_yaml(item, 0).strip()}")
-        return "\n".join(lines)
-    if isinstance(obj, bool):
-        return "true" if obj else "false"
-    if obj is None:
-        return "null"
-    if isinstance(obj, str):
-        return _yaml_quote(obj)
-    return str(obj)
-
-
 def generate_rooms_yaml(
     seed: int | str,
     map_shuffle: str | int,
@@ -1873,7 +1822,7 @@ def _generate_rooms_yaml_with_rng(
     companion_shuffle: int | bool,
     kaeli_mom: bool,
     overworld_shuffle: bool,
-) -> str:
+) -> list[dict[str, Any]]:
     rooms = _read_yaml(ROOMS_PATH)
     battlefield_rewards = _shuffle_battlefield_rewards(rooms, battlefield_shuffle=battlefield_shuffle, rng=rng)
     _companions_shuffle(rooms, companion_shuffle=companion_shuffle, kaeli_mom=kaeli_mom, rng=rng)
@@ -1889,7 +1838,7 @@ def _generate_rooms_yaml_with_rng(
         rng=rng,
     )
 
-    return _to_yaml(_normalize_yaml_rooms(rooms)) + "\n"
+    return _normalize_yaml_rooms(rooms)
 
 
 if __name__ == "__main__":

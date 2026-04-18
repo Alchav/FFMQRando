@@ -7,6 +7,7 @@ from itertools import product
 from pathlib import Path
 
 import pytest
+import yaml
 
 from archipelago_rooms_generator.rooms_generator import (
     LogicLink,
@@ -34,6 +35,10 @@ TRACE_CASES = [
     dict(seed="00000022", map_shuffle=3, crest_shuffle=True, battlefield_shuffle=False, companion_shuffle=1, kaeli_mom=True, overworld_shuffle=True),
 ]
 SMOKE_OPTION_MATRIX = list(product([0, 1, 2, 3], [False, True], [False, True], [0, 1, 2], [False, True], [False, True]))
+
+
+def _stable_digest(obj) -> str:
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 class ReplayRng:
@@ -163,7 +168,7 @@ def test_generate_rooms_yaml_smoke(
         kaeli_mom=kaeli_mom,
         overworld_shuffle=overworld_shuffle,
     )
-    assert isinstance(generated, str)
+    assert isinstance(generated, list)
     assert generated
 
 
@@ -235,7 +240,7 @@ def test_cross_impl_seed_matrix_hashes_match():
             kaeli_mom=False,
             overworld_shuffle=False,
         )
-        digest = hashlib.sha256(generated.encode()).hexdigest()
+        digest = _stable_digest(generated)
         assert digest == case["sha256"], f"Mismatch for seed={case['seed']} map_shuffle={case['map_shuffle']}"
 
 
@@ -316,4 +321,4 @@ def test_trace_replay_matches_csharp_logic(case, trace_runner):
         overworld_shuffle=case["overworld_shuffle"],
     )
     replay_rng.assert_exhausted()
-    assert generated == yaml_text
+    assert generated == yaml.safe_load(yaml_text)
