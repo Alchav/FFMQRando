@@ -105,3 +105,17 @@ def test_cross_impl_seed_matrix_hashes_match():
         )
         digest = hashlib.sha256(generated.encode()).hexdigest()
         assert digest == case["sha256"], f"Mismatch for seed={case['seed']} map_shuffle={case['map_shuffle']}"
+
+
+def test_overworld_shuffle_argument_changes_topology():
+    base_kwargs = dict(
+        seed="00000001",
+        map_shuffle=2,
+        crest_shuffle=True,
+        battlefield_shuffle=False,
+        companion_shuffle=False,
+        kaeli_mom=False,
+    )
+    no_overworld = generate_rooms_yaml(**base_kwargs, overworld_shuffle=False)
+    with_overworld = generate_rooms_yaml(**base_kwargs, overworld_shuffle=True)
+    assert no_overworld != with_overworld

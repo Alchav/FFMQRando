@@ -354,12 +354,17 @@ def _crest_shuffle(rooms: list[dict[str, Any]], crest_shuffle: bool, rng: MT1933
         _room_by_id(rooms, room_id)["links"].append(link)
 
 
-def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT19337Compat) -> None:
+def _floor_shuffle(
+    rooms: list[dict[str, Any]],
+    map_shuffle: str | int,
+    rng: MT19337Compat,
+    overworld_shuffle: bool | None = None,
+) -> None:
     map_shuffle = _normalize_map_shuffle_mode(map_shuffle)
     if map_shuffle not in MAP_SHUFFLE_DUNGEON_MODES:
         return
 
-    include_temples_towns = map_shuffle in {"Everything", 3}
+    include_temples_towns = (map_shuffle in {"Everything", 3}) if overworld_shuffle is None else overworld_shuffle
     intradungeon = map_shuffle in {"DungeonsInternal", 1}
     pending_links: list[tuple[int, dict[str, Any]]] = []
 
@@ -976,12 +981,15 @@ def generate_rooms_yaml(
     battlefield_shuffle: bool,
     companion_shuffle: bool,
     kaeli_mom: bool,
+    overworld_shuffle: bool | None = None,
 ) -> str:
     """
     Generate a shuffled rooms.yaml payload without calling the FFMQR Web API.
 
     Parameters are API-compatible; battlefield_shuffle / companion_shuffle / kaeli_mom are
     accepted for Archipelago compatibility but do not modify room-link topology in this module.
+    If overworld_shuffle is provided, it overrides map mode's default include/exclude behavior
+    for towns/temples links.
     """
     _ = (battlefield_shuffle, companion_shuffle, kaeli_mom)
 
@@ -989,7 +997,7 @@ def generate_rooms_yaml(
     rng = MT19337Compat(_seed_to_uint32(seed))
 
     _crest_shuffle(rooms, crest_shuffle=crest_shuffle, rng=rng)
-    _floor_shuffle(rooms, map_shuffle=map_shuffle, rng=rng)
+    _floor_shuffle(rooms, map_shuffle=map_shuffle, rng=rng, overworld_shuffle=overworld_shuffle)
 
     return _to_yaml(rooms)
 

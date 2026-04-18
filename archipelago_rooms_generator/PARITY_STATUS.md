@@ -26,6 +26,8 @@ This tracks parity work between:
 
 - ✅ Seed handling follows latest C# AP-style 8-char hex parsing and SHA-256 folding.
 - ✅ Map-shuffle mode normalization includes latest textual aliases and ints.
+- ✅ `generate_rooms_yaml(...)` supports explicit `overworld_shuffle` override when callers need
+  direct control beyond map-shuffle defaults.
 
 ### Core floor-link mechanics
 
