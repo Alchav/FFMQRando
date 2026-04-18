@@ -3,13 +3,53 @@ using System.Collections.Generic;
 using System.Text;
 using System.Linq;
 using RomUtilities;
+using System.ComponentModel;
 
 namespace FFMQLib
 {
+	public enum MusicMode : int
+	{
+		[Description("Normal")]
+		Normal,
+		[Description("Shuffle Tracks")]
+		Shuffle,
+		[Description("Mute Music")]
+		Mute,
+	}
+	
 	public partial class FFMQRom : SnesRom
 	{
-		public void FastMovement()
+		public void GeneralModifications(Flags flags, Preferences prefs, bool apenabled, MT19337 rng)
 		{
+			ExpandRom();
+			FastMovement(prefs.DisableSpeedHacks);
+			DefaultSettings();
+			RemoveClouds();
+			RemoveStrobing(prefs.ReduceBattleFlash);
+			SmallFixes();
+			BugFixes();
+			SystemBugFixes();
+			CompanionRoutines(flags.KaelisMomFightMinotaur, apenabled);
+			DummyRoom();
+			KeyItemWindow(flags.SkyCoinMode == SkyCoinModes.ShatteredSkyCoin);
+			GameStateIndicator(hashString);
+			ArchipelagoSupport(apenabled);
+			NonSpoilerDemoplay(flags.MapShuffling != MapShufflingMode.None);
+			FixMultiplyingDarkKing();
+			PazuzuFixedFloorRng(rng);
+			ShuffledFloorVanillaMonstersFix(flags);
+			Msu1Support(prefs.MusicMode == MusicMode.Mute);
+			SaveFileReduction();
+			DisableSeedDuping(flags.DisableDuping);
+		}
+		
+		public void FastMovement(bool disablespeedhacks)
+		{
+			if (disablespeedhacks)
+			{
+				return;
+			}
+
 			// walking
 			// double scrolling rate
 			Put(0x008CAC, Blob.FromHex("FE0202FE")); // 8CAB > 8CAC
@@ -27,6 +67,14 @@ namespace FFMQLib
 			PutInBank(0x11, 0xFFE0, Blob.FromHex("E8E8E8E8E8E88E4F196B"));
 			// move starting position in the jump pos table by one so we end on the last intended position
 			PutInBank(0x00,0xF24C, Blob.FromHex("03006300C3002301")); // F251 > F24C
+
+			// Fix Up/Down sprite animation
+			PutInBank(0x00, 0xF420, Blob.FromHex("ff043c200008053c600808ffffffffffffffffffffffff043d60fb08053d200d08ffff80048005ff"));
+			// Fix Right sprite animation
+			PutInBank(0x00, 0xF458, Blob.FromHex("ff043c200008053c600808ffffffffffffffffffffffff043d60fb088005ffff8004ff"));
+			// Fix Left sprite animation
+			PutInBank(0x00, 0xF48B, Blob.FromHex("ff043c200008053c600808ffffffffffffffffffffffff8005043d200d08ffff8004ff"));
+
 
 			// Working hack for inmap room transition, except it slow down walking speed back at 16 frames vs 8, but it works!
 			PutInBank(0x11, 0x8200, Blob.FromHex("A9028D461AA00A008C9119A90F8D26196B"));
@@ -78,7 +126,7 @@ namespace FFMQLib
 		public void DefaultSettings()
 		{
 			// Show Figure by default instead of Scale for HP
-			GameFlags[(int)GameFlagsList.ShowFigureForHP] = true;
+			GameFlags[(int)LegacyGameFlagsList.ShowFigureForHP] = true;
 
 			// Default Text speed to 1
 			Data[0x65397] = 0x00;
@@ -90,7 +138,7 @@ namespace FFMQLib
 			PutInBank(0x0B, 0x8599, Blob.FromHex("80"));
 			PutInBank(0x0B, 0x85A4, Blob.FromHex("80"));
 		}
-		public void RemoveStrobing()
+		public void RemoveStrobing(bool reducebattleflash)
 		{
 			// Crystal flash, simply skip the flash routine
 			PutInBank(0x01, 0xD4C9, Blob.FromHex("EAEAEA"));
@@ -105,6 +153,24 @@ namespace FFMQLib
 			PutInBank(0x01, 0xDC2A, Blob.FromHex("EAEAEA"));
 			PutInBank(0x01, 0xDC37, Blob.FromHex("EAEAEA"));
 			PutInBank(0x01, 0xDDBA, Blob.FromHex("60"));
+
+			// These are a bit more extreme and are only flash, not strobbing, so we add them as preference
+			if (reducebattleflash)
+			{
+				// Start of battle flash
+				PutInBank(0x02, 0xDA4E, Blob.FromHex("a2"));
+
+				// Weapon flash (Sword, Axe, MorningStar)
+				// Sword
+				PutInBank(0x0B, 0xED64, Blob.FromHex("1931"));
+				PutInBank(0x0B, 0xED68, Blob.FromHex("1932"));
+				// Axe
+				PutInBank(0x0B, 0xED71, Blob.FromHex("1935"));
+				PutInBank(0x0B, 0xED75, Blob.FromHex("1936"));
+				// Morning Star
+				PutInBank(0x0B, 0xEDDD, Blob.FromHex("194e"));
+				PutInBank(0x0B, 0xEDE3, Blob.FromHex("1950"));
+			}
 		}
 		public void SmallFixes()
 		{
@@ -112,13 +178,13 @@ namespace FFMQLib
 			PutInBank(0x01, 0xF453, Blob.FromHex("3030"));
 
 			// Allow shattered tile to intercept MegaGrenade
-			GameMaps.TilesProperties[0x06][0x15].Byte1 = 0x07;
+			GameMaps.TilesProperties[0x06][0x15].PropertyByte1 = 0x07;
 
 			// Stop CatClaws from giving Bow&Arrows to companion
 			PutInBank(0x00, 0xdb9d, Blob.FromHex("EAEAEAEA"));
 
 			// Phoebe1 start with Bow&Arrows
-			PutInBank(0x0C, 0xd1d1, Blob.FromHex("2D0004"));
+			//PutInBank(0x0C, 0xd1d1, Blob.FromHex("2D0004"));
 
 			// Start with 50 bombs so we don't need to update when acquiring them
 			PutInBank(0x0C, 0xd0e0, Blob.FromHex("32"));
@@ -138,16 +204,15 @@ namespace FFMQLib
 
 			// Fix vendor text to sell books & seals
 			var fullbookscript = new ScriptBuilder(new List<string>{
-					"054D0C",			// Get item names
-					"054320C10C",
+					"07D08015",         // Get item names, as well as AP
 					"05EA0C",
 					"0F0015",			// Load item ID
-					"05041F[10]",
-					"050614[10]",
-					"05041B[09]",
-					TextToHex(" Book"),
+					"05041F[09]",
+					"050614[09]",
+					"05041B[08]",
+					MQText.TextToHex(" Book"),
 					"00",
-					TextToHex(" Seal"),
+					MQText.TextToHex(" Seal"),
 					"00"
 				});
 
@@ -159,12 +224,71 @@ namespace FFMQLib
 			fullbookscript.WriteAt(0x11, 0x9460, this);
 			jumpScript.WriteAt(0x03, 0xFFD0, this);
 			PutInBank(0x03, 0xFE80, Blob.FromHex("08D0FF"));
+
+			// Kaeli's Axe Sprite Fix, call 09209511 + 093d8c00 to initialize, 09309511 + 093d8c00 to restore
+			PutInBank(0x11, 0x9520, Blob.FromHex("08e230ad31108d3004a9238d3110286b"));
+			PutInBank(0x11, 0x9530, Blob.FromHex("08e230ad30048d3110286b"));
+
+			// Put a cap of 40k hp to hp scaled attacks
+			PutInBank(0x02, 0x9ABD, Blob.FromHex("20E0FE"));
+			PutInBank(0x02, 0x9AE9, Blob.FromHex("20E0FE"));
+			PutInBank(0x02, 0xFEE0, Blob.FromHex("0b20228fa516c9409c9003a9409c2b60"));
+
+			// Load resist message for bomb/axe/projectile
+			PutInBank(0x02, 0x9C79, Blob.FromHex("EAEA"));
+
+			// Apply resist to bombs
+			PutInBank(0x02, 0x905B, Blob.FromHex("20f0feeaeaea"));
+			PutInBank(0x02, 0xFEF0, Blob.FromHex("209d9920699a20ed9b60"));
+
+			// Transfer Reuben Megagrenade animation to benjamin
+			PutInBank(0x01, 0xD9D0, Blob.FromHex("ae9d198e3519eaeaeaeaeaea"));
+			PutInBank(0x01, 0xD9E2, Blob.FromHex("ad8b0e18690c"));
+			PutInBank(0x01, 0xD9EB, Blob.FromHex("20b08c"));
+
+			// Fix Scale HP spilling over when HP > 1640; simply cap the drawing to 1640, actual hp can go higher
+			var scaleHpScript = new ScriptBuilder(new List<string>{
+					"2EF0[10]",		// Check Figure HP flag, jump if set
+					"05F5FB0014",	// Load current hp
+					"05B86806[04]",	// If less than 1640, skip to writing to temp memory
+					"053C6806",		// Cap to 1640
+					"124A00",		// Write to temp memory
+					"05F5FB0016",	// Load max hp
+					"05B86806[08]",	// If less than 1640, skip to writing to temp memory
+					"053C6806",		// Cap to 1640
+					"124C00",		// Write to temp memory
+					"00",			// Exit
+					"05F5FB0014",	// Load current hp
+					"124A00",		// Write to temp memory
+					"05F5FB0016",	// Load max hp
+					"124C00",		// Write to temp memory
+					"00",			// Exit
+				});
+
+			var scaleHpJumpScript = new ScriptBuilder(new List<string>{
+					"07908611",
+					"050e71b300"
+				});
+
+			scaleHpScript.WriteAt(0x11, 0x8690, this);
+			scaleHpJumpScript.WriteAt(0x03, 0xB32C, this);
+		}
+		public void FixMultiplyingDarkKing()
+		{
+			// Expand Battle to 3 if multiply is casted
+			PutInBank(0x02, 0xD169, Blob.FromHex("5C509511"));
+			PutInBank(0x11, 0x9550, Blob.FromHex("a507f008c901f00b5c71d1022070955c8fd1022070955c92d102000000000000a513cdb3041015a9ff850d850e850fa500c901d007a90385008db40460"));
+
+			// Hard coded selectors when multiply is used, because dk is too big to share the screen
+			PutInBank(0x02, 0xD764, Blob.FromHex("22909511eaeab0"));
+			PutInBank(0x11, 0x9590, Blob.FromHex("c950d014a500c901f012a200bfc095119d2d0ae8e00cd0f4386b386ba507d0fa186b00000000000000000000000000000c04080a0204080a1604080a"));
 		}
 		public void ExitHack(LocationIds startingLocation)
 		{
 			// Using exit on overworld send you back to home location
-			PutInBank(0x00, 0xC064, Blob.FromHex("22d08711eaeaeaeaea"));
-			PutInBank(0x11, 0x87D0, Blob.FromHex($"ad910e297f00f004c907006b08e220a9{(int)startingLocation:X2}8d880e28386b"));
+			PutInBank(0x00, 0xC06D, Blob.FromHex("eaea"));
+			PutInBank(0x00, 0xC074, Blob.FromHex("22d08711ea"));
+			PutInBank(0x11, 0x87D0, Blob.FromHex($"de1810e220ad910e297fd005a9{(int)startingLocation:X2}8d880e6b"));
 		}
 		public void ChestsHacks(Flags flags, ItemsPlacement itemsPlacement)
 		{
@@ -174,16 +298,35 @@ namespace FFMQLib
 			// New routine to get the quantity of items, use a lut instead of comparing chest id
 			PutInBank(0x11, 0x9000, Blob.FromHex("08c230ad9e00aabf0091118d6601e230c901f004a9808002a9008d6501286b"));
 
+			// Newer routine to set item quantity, supersed previous (to remove)
+			//PutInBank(0x00, 0xDACC, Blob.FromHex("22509011ea")); // jump to new routine, skip decreasing quantity
+			//PutInBank(0x00, 0xDB01, Blob.FromHex("eaeaea")); // don't increment quantity, when giving an item
+			//PutInBank(0x00, 0xDB5F, Blob.FromHex("eaeaea")); // don't increment bomb quantity
+			//PutInBank(0x00, 0xDB6B, Blob.FromHex("eaeaea")); // don't increment companion projectile quantity
+			//PutInBank(0x00, 0xDB7D, Blob.FromHex("eaeaea")); // don't increment quantity, when adding a new consumable
+			
+			// GiveItem Part 1
+			PutInBank(0x00, 0xDACC, Blob.FromHex("08c230da5ae23022308e11a59ec914900cc920900bc92f900ac9dd90094cd6db4c8edb4c9cdb4cbedb")); 
+			PutInBank(0x00, 0xDB31, Blob.FromHex("9005")); // branch to rts when checking quantity
+
+			// Copy Ammo Compute
+			PutInBank(0x11, 0x8e00, Blob.FromHex("c963900b9c6601a9801c6501a963606d6601c964900ce96349ff6d66018d6601a96360"));
+			// Give Item Part 2
+			PutInBank(0x11, 0x8e30, Blob.FromHex("22509011e230a59ec910902dc9149016c9dd9029f004a2808002a200bd301020008e9d30106b2265da00a59e9d9e0ebd9f0e20008e9d9f0e6b220092116b"));
+
+			// Item Quantity Routine
+			PutInBank(0x11, 0x9050, Blob.FromHex("e220ad910ec96ad012ad5f01c9f2900bc9f6b007a9198d66018026ad9e00c910900cc914900fc9dd9004c9f0900e9c6601a9808012a9038d66018005a90a8d6601a9800c65016b1c65016b"));
+			
 			// Generate lut of boxes & chests quantity
 			byte[] lutResetBox = new byte[0x20];
 
 			var test2 = itemsPlacement.ItemsLocations.Where(x => x.ObjectId < 0x20).ToList();
 
 			foreach(var location in itemsPlacement.ItemsLocations.Where(x => x.Type == GameObjectType.Chest || x.Type == GameObjectType.Box).ToList())
-            {
+			{
 				byte quantity = 1;
 
-				if (location.Content >= Items.Potion && location.Content <= Items.Refresher)
+				if (location.Content >= Items.CurePotion && location.Content <= Items.Refresher)
 				{
 					quantity = 3;
 				}
@@ -197,15 +340,13 @@ namespace FFMQLib
 					quantity = 25;
 				}
 
-
-				if (location.Type == GameObjectType.Chest)
+				if (!location.Reset)
 				{
 					GameFlags.CustomFlagToHex(lutResetBox, location.ObjectId, true);
 				}
-
 				
 				PutInBank(0x11, 0x9100 + location.ObjectId, new byte[] { quantity });
-            }
+			}
 
 			// Part 1 of chest script, we gut the native quantity scripts
 			PutInBank(0x03, 0x86BF, Blob.FromHex("051d2e000205fc4d6a8714ff115f012dc80e058e6a870d65010001090090110543008001052c9e0014ff0a3287"));
@@ -220,29 +361,20 @@ namespace FFMQLib
 			// Insert lut of resetable boxes, 0x20 bytes
 			PutInBank(0x11, 0x8FC0, lutResetBox);
 
-			// Put the Mirror/Mask effect with the give item routine instead, just outright cancel if they're outside their respective dungeons
-			string maskBranch = "ff";
-			string mirrorBranch = "ff";
-			string skyCoinBranch = "ff";
-
-			if (itemsPlacement.ItemsLocations.Find(x => x.Content == Items.Mask).Location == LocationIds.Volcano)
-			{
-				maskBranch = "05";
-			}
-
-			if (itemsPlacement.ItemsLocations.Find(x => x.Content == Items.MagicMirror).Location == LocationIds.IcePyramid)
-			{
-				mirrorBranch = "06";
-			}
-
-			if (flags.SkyCoinMode == SkyCoinModes.ShatteredSkyCoin)
-			{
-				skyCoinBranch = "0F";
-			}
+			// Put the Mirror/Mask effect with the give item routine instead
+			var maskLocations = itemsPlacement.ItemsLocations.Where(x => x.Content == Items.Mask).ToList();
+			var mirrorLocations = itemsPlacement.ItemsLocations.Where(x => x.Content == Items.MagicMirror).ToList();
 
 			// see 11_9200_ChestHacks.asm
-			PutInBank(0x11, 0x9200, Blob.FromHex($"C9{maskBranch}F013C9{mirrorBranch}F020C9{skyCoinBranch}F02D0BF4A60E2B224E97002B6B0BF4D0002BA992224E97002BAD9E0080E40BF4D0002BA992224E97002BAD9E0080D3EE930E6B"));
-			PutInBank(0x00, 0xDB82, Blob.FromHex("22009211EAEAEAEAEAEA"));
+			PutInBank(0x11, 0x9200, Blob.FromHex("48c905f014c906f02dc90ff046680bf4a60e2b224e97002b6bad880ec929d0edad910ef0e80bf4d0002ba992224e97002bad9e0080d7ad880ec921d0d0ad910ef0cb0bf4d0002ba992224e97002bad9e0080baee930e80b56b"));
+			//PutInBank(0x00, 0xDB82, Blob.FromHex("22009211EAEAEAEAEAEA"));
+
+			// Item action selector (w AP support)
+			PutInBank(0x00, 0xDB42, Blob.FromHex("5c008f11"));
+			PutInBank(0x11, 0x8F00, Blob.FromHex("c910b0045c82db00c914b0045c70db00c920b0045c8edb00c92fb0045c9cdb00c9ddb0045cbedb00c9deb0045c58db00c9dfb0045c64db005c6edb00"));
+
+			// Don't check quantity on item F0+ when opening chests
+			PutInBank(0x00, 0xDA68, Blob.FromHex("c9f0b0"));
 		}
 		public void NonSpoilerDemoplay(bool shortenedLoop)
 		{
@@ -270,6 +402,34 @@ namespace FFMQLib
 			PutInBank(0x0C, 0xA82E, Blob.FromHex(inputseries));
 			PutInBank(0x0C, 0xA8C0, Blob.FromHex("33"));
 		}
+		public void GameStateIndicator(string hash)
+		{
+			// Game state byte is at 0x7E3749, initialized at 0, then set to 1 after loading a save or starting a new game, set to 0 if giving up after a battle
+			// Initialize game state byte and rando validation "FFMQR", at 0x7E374A
+			PutInBank(0x11, 0x8B00, Blob.FromHex("08e230a9008f49377e8ff01f708ff11f708ff21f70c230a2f08ba04a37a90400547e1120008c28a9008f67367e3a8f68367e6b"));
+			PutInBank(0x11, 0x8BF0, Blob.FromHex("46464d5152" + MQText.TextToHex(hash, false))); // Validation code
+			PutInBank(0x00, 0x8009, Blob.FromHex("22008B11eaeaeaeaeaeaea"));
+
+			// Validate hash in sram
+			PutInBank(0x11, 0x8C00, Blob.FromHex("20408c900320108c60"));
+			PutInBank(0x11, 0x8C10, Blob.FromHex("08c230a20000a900009fe01f70e8e8e01000d0f52860")); // Reset hint data
+			// Validate hash and write if it doesn't match
+			PutInBank(0x11, 0x8C40, Blob.FromHex("08c230a200008007e8e8e00800f00cbff58b11dff31f70f0ef8003281860a200008007e8e8e00800f00abff58b119ff31f7080ef283860"));
+
+			// Set when starting new game
+			PutInBank(0x11, 0x8B40, Blob.FromHex("08e230a9018f49377e285cb8c7006b"));
+			PutInBank(0x00, 0x815F, Blob.FromHex("22408B11"));
+
+			// Set when loading game or restarting a new game
+			PutInBank(0x11, 0x8B80, Blob.FromHex("08e230af49377ed011c230add10f8ff11f70e230a9018f49377e282bab286b"));
+			PutInBank(0x00, 0xBD26, Blob.FromHex("5c808B11"));
+
+			// Set when giving up
+			PutInBank(0x11, 0x8B60, Blob.FromHex("0509006a8b050225a00309A08B11050245a00300"));
+			PutInBank(0x11, 0x8BA0, Blob.FromHex("08e230a9008f49377e8ff01f708ff11f708ff21f70286b"));
+			PutInBank(0x03, 0xA020, Blob.FromHex("0502608B11"));
+		}
+
 		public void RestoreHillOfDestiny()
 		{
 			// Maybe one day, tilesets is linked to bone dungeons'
@@ -307,6 +467,15 @@ namespace FFMQLib
 
 			GameMaps[(int)MapList.ForestaInterior].ModifyMap(0x28, 0x35, dummyroomTiny);
 		}
+		public void SaveFileReduction()
+		{
+			// The game writes 3 copies of the savefile to sram; when loading a savefile if the first copy fail (validation check or bad checksum), it will move to the next copy; this is a bit overzealous, so we reduce this to 2 copies to reclaim some SRAM
+			// Free SRAM start at 701C62
+			
+			PutInBank(0x00, 0xCA00, Blob.FromHex("0200"));
+			PutInBank(0x00, 0xCA74, Blob.FromHex("0200"));
+
+		}
 		public void PazuzuFixedFloorRng(MT19337 rng)
 		{
 			PutInBank(0x11, 0x8800, Blob.FromHex("08e230ad940ec91ff0031ad002a9008d940eaabf2088118d9e00286b"));
@@ -325,7 +494,7 @@ namespace FFMQLib
 
 			newPazuzuRng.WriteAt(0x03, 0xFC7E, this);
 		}
-		public void KeyItemWindow()
+		public void KeyItemWindow(bool skyfragmentsEnabled)
 		{
 			// Timer Hack
 			PutInBank(0x00, 0x8968, Blob.FromHex("22008911eaeaeaeaeaeaeaea"));
@@ -347,13 +516,14 @@ namespace FFMQLib
 			PutInBank(0x11, 0x8980, Blob.FromHex("08908924012e1e0700"));
 
 			// Box drawing script
-			PutInBank(0x11, 0x8990, Blob.FromHex("0f000e0b55bc8910610e05c10000aa890fa0100bffbc890ab889241b300405151c3118fefe01fefe09298d0000"));
+			string skyFragmentIndicator = skyfragmentsEnabled ? "05090fd989" : "0ad989ffff";
+			PutInBank(0x11, 0x8990, Blob.FromHex($"0f000e0b55dc8910610e05c10000aa890fa0100bffdc890ad989241b300405151c3118fefe01fefe01fefe0f600e{skyFragmentIndicator}010f930e0c6c0031056d106c000548101005189e000209298d00"));
 
 			// Companion Weapon Drawing Routine
-			PutInBank(0x00, 0x8D33, Blob.FromHex("EA22C08911"));
+			PutInBank(0x00, 0x8D33, Blob.FromHex("EA22008a11"));
 			PutInBank(0x00, 0x8D6C, Blob.FromHex("22e08911eaeaeaeaeaeaeaeaeaeaeaeaea"));
-			PutInBank(0x11, 0x89C0, Blob.FromHex("08c230ae610ef005ae600e8003aeb11028e0ff6b"));
-			PutInBank(0x11, 0x89E0, Blob.FromHex("22c08911dabf0098040a0a8df700c210686b"));
+			PutInBank(0x11, 0x8A00, Blob.FromHex("08c230ae610ef005ae600e8003aeb11028e0ff6b"));
+			PutInBank(0x11, 0x89E0, Blob.FromHex("22008a11dabf0098040a0a8df700c210686b"));
 		}
 		public void BugFixes()
 		{
@@ -374,13 +544,15 @@ namespace FFMQLib
 			PutInBank(0x03, 0xFFC0, Blob.FromHex("0508051ED0000100")); // Copy armor command + moved original command
 
 			// Fix Life Insta Kill Bug
-			PutInBank(0x02, 0x9238, Blob.FromHex("A5562B2908F0E5")); // Load weakness instead of resistance, and beq insteand of bne
-			PutInBank(0x02, 0x9CAA, Blob.FromHex("EAEA")); // Don't branch if resistant to fatal
+			PutInBank(0x02, 0x9238, Blob.FromHex("A5562B2908F0E5")); // Load weakness instead of counter attack, and beq instead of bne
+			PutInBank(0x02, 0xFF00, Blob.FromHex("202f8f6b")); // Long jump to gettargetzeropage
+			PutInBank(0x11, 0x8640, Blob.FromHex("0b2200ff02a5562b2908d00c0b2200ff02a53d2b2980d002a9006b")); // If undead, don't check resist when dooming
+			PutInBank(0x02, 0x9CA1, Blob.FromHex("22408611eaeaeaeaea")); // Jump to new resist check
 
 			// Fix Cure Overflow Bug
 			// see 11_8600_CureOverflow.asm
-			PutInBank(0x02, 0x95CA, Blob.FromHex("22008611eaea"));
-			PutInBank(0x11, 0x8600, Blob.FromHex("a514186d77049008a51638e5148d7704c900809006a9fe7f8d77046b")); // Check for overflow and cap healing to positive value
+			PutInBank(0x02, 0x95CA, Blob.FromHex("220086112860"));
+			PutInBank(0x11, 0x8600, Blob.FromHex("a514186d7704b004c5169008a51638e5148d7704ad77041006a9fe7f8d77046b")); // Check for overflow and cap healing to positive value
 
 			// Fix Dark King's crit loop
 			// see 11_87A0_CritCheck.asm
@@ -390,52 +562,98 @@ namespace FFMQLib
 			// Fix Skullrus Rex and Stone Golem not counting as boss for hp based attacks
 			PutInBank(0x02, 0x9B07, Blob.FromHex("22508811"));
 			PutInBank(0x11, 0x8850, Blob.FromHex("a53bc940f008c941f004c9449001386b"));
-
+		}
+		public void SystemBugFixes()
+		{
 			// Fix crashing when transitioning from door and switching weapon at the same time (experimental)
 			// We skip a PHA/PLP in an interrupt routine that seems to use vertical scanline location (OPVCT) to compute the status register ???
 			//  vertscanline x3 + $0f (or + $9a)
 			PutInBank(0x00, 0xB8C0, Blob.FromHex("EAEA"));
 			PutInBank(0x00, 0xB852, Blob.FromHex("EAEA"));
+
+			// Fix music instrument overflow
+			// If the instruments data is full ($620, $20 bytes), when loading a new track the instruments will overflow and crash the spc chip by loading garbage data; the fix force the instrument data to be flushed to make space
+			PutInBank(0x0D, 0x8340, Blob.FromHex("22708811b016eaeaeaeaeaeaea"));
+			PutInBank(0x11, 0x8870, Blob.FromHex("a20000c220b528f009e8e8e02000d0f5386b186b"));
+
+			// Fix Mask/Mirror hanging on non enemies maps
+			PutInBank(0x01, 0x8DF3, Blob.FromHex("2240821160"));
+			PutInBank(0x11, 0x8240, Blob.FromHex("08e220c210af461a00d0fa286b"));
 		}
-		public void Msu1SupportRandom(bool randomizesong, MT19337 rng)
+		public void ShuffledFloorVanillaMonstersFix(Flags flags)
 		{
-			var rngback = rng;
-			
+			// Remove enemy on Pazuzu 6F blocking the way to avoid softlock when the floors are shuffled, but enemies' positions aren't
+			if (flags.MapShuffling != MapShufflingMode.None && !flags.ShuffleEnemiesPosition)
+			{
+				MapObjects[0x58][0x0A].Gameflag = (byte)GameFlagIds.ShowEnemies;
+			}
+		}
+
+		public void DisableSeedDuping(bool enable)
+		{
+			PutInBank(0x11, 0x9F00, Blob.FromHex("ad20102940f014a9ff8d50108d51108d52108dd0108dd1108dd210ad5010c9306b"));
+
+			if (enable)
+			{
+				PutInBank(0x00, 0xD3D2, Blob.FromHex("22009f11ea"));
+			}
+		}
+		public void Msu1Support(bool mute)
+		{
 			// see 10_8000_MSUSupport.asm
 			PutInBank(0x0D, 0x8186, Blob.FromHex("5C008010EAEA"));
 			PutInBank(0x0D, 0x81F4, Blob.FromHex("22768010"));
 			PutInBank(0x0D, 0x81FA, Blob.FromHex("229F8010EAEAEAEAEAEA"));
 			PutInBank(0x0D, 0x85D2, Blob.FromHex("5C648010EA"));
 
-			string loadrandomtrack = "EAEAEA";
+			string loadrandomtrack = mute ? "64035c8a810d" : "EAEAEAA501C5";
 			string saverandomtrack = "EAEAEA";
 
-			if (randomizesong)
+			string msucode = $"{loadrandomtrack}05D0044c4081ea20C2809044AFF0FF7FC501D00664035C8A810D9C0620A5018FF0FF7F8D04209C0520A9012C002070F9AD00202908D01DA9FF8D0620A501C915D004A9018005201081A9038D072064035CED810DA9008FF0FF7F5CED810D8D4021C9F0D0079C07205CD9850D5CED850DA6064820C2809009AD00202908D002686BAFF0FF7FF00D68A501201081A9008FF0FF7F6B682012816BA501D01620C280900FAFF0FF7FF0099C41219C024285056BA5018D412185058D02426BAD0220C953D025AD0320C92DD01EAD0420C94DD017AD0520C953D010AD0620C955D009AD0720C931D00238601860DA08E230A501AABF208110291F850128FA60DA08E230AABF408110291F28FA60A501{saverandomtrack}850960";
+
+			// $603 > 6401 > 6403
+			// first 5c8a810d > 4c4081ea
+
+			PutInBank(0x10, 0x8000, Blob.FromHex(msucode));
+
+			//awkward patch, we'll fix it later
+			PutInBank(0x10, 0x8140, Blob.FromHex("20c2809009ad00202910f00264035c8a810d"));
+		}
+		public void SetMusicMode(MusicMode mode, MT19337 rng)
+		{
+			if (mode != MusicMode.Shuffle)
 			{
-				loadrandomtrack = "20F080";
-				saverandomtrack = "200281";
-
-				List<byte> tracks = Enumerable.Range(0, 0x1A).Select(x => (byte)x).ToList();
-				List<byte> goodordertracks = Enumerable.Range(0, 0x1B).Select(x => (byte)x).ToList();
-				tracks.Remove(0x00);
-				tracks.Remove(0x04);
-				tracks.Remove(0x15);
-
-				tracks.Shuffle(rng);
-				tracks.Insert(0x00, 0x00);
-				tracks.Insert(0x04, 0x04);
-				tracks.Insert(0x15, 0x15);
-				tracks.Add(0x1A);
-				List<(byte, byte)> completetracks = goodordertracks.Select(x => (x, tracks[x])).ToList();
-
-				PutInBank(0x10, 0x8120, completetracks.OrderBy(x => x.Item1).Select(x => x.Item2).ToArray());
-				PutInBank(0x10, 0x8140, completetracks.OrderBy(x => x.Item2).Select(x => x.Item1).ToArray());
+				return;
 			}
 
-			rng = rngback;
-			rng.Next();
+			List<byte> tracks = Enumerable.Range(0, 0x1A).Select(x => (byte)x).ToList();
+			List<byte> goodordertracks = Enumerable.Range(0, 0x1B).Select(x => (byte)x).ToList();
+			tracks.Remove(0x00);
+			tracks.Remove(0x04);
+			tracks.Remove(0x15);
 
-			PutInBank(0x10, 0x8000, Blob.FromHex($"{loadrandomtrack}A501C505D0045C8A810D20C2809044AFF0FF7FC501D00664015C8A810D9C0620A5018FF0FF7F8D04209C0520A9012C002070F9AD00202908D01DA9FF8D0620A501C915D004A9018005201081A9038D072064015CED810DA9008FF0FF7F5CED810D8D4021C9F0D0079C07205CD9850D5CED850DA6064820C2809009AD00202908D002686BAFF0FF7FF00D68A501201081A9008FF0FF7F6B682012816BA501D01620C280900FAFF0FF7FF0099C41219C024285056BA5018D412185058D02426BAD0220C953D025AD0320C92DD01EAD0420C94DD017AD0520C953D010AD0620C955D009AD0720C931D00238601860DA08E230A501AABF208110291F850128FA60DA08E230AABF408110291F28FA60A501{saverandomtrack}850960"));
+			tracks.Shuffle(rng);
+			tracks.Insert(0x00, 0x00);
+			tracks.Insert(0x04, 0x04);
+			tracks.Insert(0x15, 0x15);
+			tracks.Add(0x1A);
+			List<(byte, byte)> completetracks = goodordertracks.Select(x => (x, tracks[x])).ToList();
+			/*
+			if (mode == MusicMode.Mute)
+			{
+				//completetracks = Enumerable.Repeat((byte)0x00, 0x1B).Select(x => (x, x)).ToList();
+				PutInBank(0x00, 0x8264, Blob.FromHex("00")); // Intro volume
+				PutInBank(0x01, 0x9133, Blob.FromHex("00")); // Exit battle volume
+				PutInBank(0x01, 0xBA94, Blob.FromHex("00")); // Map volume
+				PutInBank(0x02, 0xDACC, Blob.FromHex("00")); // Enter battle volume
+			}*/
+
+			PutInBank(0x10, 0x8240, completetracks.OrderBy(x => x.Item1).Select(x => x.Item2).ToArray());
+			PutInBank(0x00, 0x928A, Blob.FromHex("22008210eaeaeaea")); // normal track loading routine
+			PutInBank(0x10, 0x8200, Blob.FromHex("aabf4082108d0106a6018e02066b"));
+			PutInBank(0x02, 0xDAC3, Blob.FromHex("22108210ea")); // battle track loading routine
+			PutInBank(0x10, 0x8210, Blob.FromHex("08e230aabf4082108d0b05a908286b"));
+			//PutInBank(0x10, 0x8140, completetracks.OrderBy(x => x.Item2).Select(x => x.Item1).ToArray());
 		}
 	}
 }

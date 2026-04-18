@@ -14,7 +14,7 @@ namespace FFMQLib
 			{ LocationIds.BoneDungeon, new List<AccessReqs> { AccessReqs.Bomb } },
 			{ LocationIds.WintryCave, new List<AccessReqs> { AccessReqs.Bomb, AccessReqs.Claw  } },
 			{ LocationIds.IcePyramid, new List<AccessReqs> { AccessReqs.Bomb, AccessReqs.Claw } },
-			{ LocationIds.Mine, new List<AccessReqs> { AccessReqs.MegaGrenade, AccessReqs.Claw, AccessReqs.Reuben1 } },
+			{ LocationIds.Mine, new List<AccessReqs> { AccessReqs.MegaGrenade, AccessReqs.Claw, AccessReqs.Reuben } },
 			{ LocationIds.LavaDome, new List<AccessReqs> { AccessReqs.MegaGrenade } },
 			{ LocationIds.GiantTree, new List<AccessReqs> { AccessReqs.Axe, AccessReqs.DragonClaw } },
 			{ LocationIds.MountGale, new List<AccessReqs> { AccessReqs.DragonClaw } },
@@ -143,56 +143,15 @@ namespace FFMQLib
 			(SubRegions.MacShip, LocationIds.MacsShip),
 			(SubRegions.MacShip, LocationIds.MacsShipDoom)
 		};
-		public static List<(SubRegions, List<List<AccessReqs>>)> SubRegionsAccess => new()
-		{
-			(SubRegions.Foresta, new List<List<AccessReqs>> { new List<AccessReqs> { } }),
-			(SubRegions.Aquaria, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.SandCoin },
-				new List<AccessReqs> { AccessReqs.RiverCoin, AccessReqs.DualheadHydra, AccessReqs.SummerAquaria },
-			}),
-			(SubRegions.LifeTemple, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.Barred },
-			}),
-			(SubRegions.AquariaFrozenField, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.SandCoin, AccessReqs.WakeWater, AccessReqs.SummerAquaria },
-				new List<AccessReqs> { AccessReqs.RiverCoin, AccessReqs.DualheadHydra, AccessReqs.SummerAquaria },
-			}),
-			(SubRegions.Fireburg, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.RiverCoin },
-				new List<AccessReqs> { AccessReqs.SandCoin, AccessReqs.DualheadHydra, AccessReqs.SummerAquaria },
-			}),
-			(SubRegions.VolcanoBattlefield, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.RiverCoin, AccessReqs.DualheadHydra },
-				new List<AccessReqs> { AccessReqs.SandCoin, AccessReqs.DualheadHydra, AccessReqs.SummerAquaria },
-			}),
-			(SubRegions.Windia, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.SunCoin },
-			}),
-			(SubRegions.SpencerCave, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.SunCoin, AccessReqs.RainbowBridge },
-			}),
-			(SubRegions.LightTemple, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.Barred },
-			}),
-			(SubRegions.ShipDock, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.Barred },
-			}),
-			(SubRegions.MacShip, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.ShipDockAccess, AccessReqs.ShipLiberated },
-			}),
-			(SubRegions.DoomCastle, new List<List<AccessReqs>> {
-				new List<AccessReqs> { AccessReqs.ShipDockAccess, AccessReqs.ShipSteeringWheel, AccessReqs.ShipLoaned },
-			}),
-		};
 		public static Dictionary<Items, List<AccessReqs>> ItemAccessReq => new Dictionary<Items, List<AccessReqs>>
 		{
 			{ Items.Elixir, new List<AccessReqs> { AccessReqs.Elixir } },
 			{ Items.TreeWither, new List<AccessReqs> { AccessReqs.TreeWither } },
-			{ Items.WakeWater, new List<AccessReqs> { AccessReqs.WakeWater } },
+			{ Items.Wakewater, new List<AccessReqs> { AccessReqs.WakeWater } },
 			{ Items.VenusKey, new List<AccessReqs> { AccessReqs.VenusKey } },
 			{ Items.MultiKey, new List<AccessReqs> { AccessReqs.MultiKey } },
 			{ Items.ThunderRock, new List<AccessReqs> { AccessReqs.ThunderRock } },
-			{ Items.CaptainCap, new List<AccessReqs> { AccessReqs.CaptainCap } },
+			{ Items.CaptainsCap, new List<AccessReqs> { AccessReqs.CaptainCap } },
 			{ Items.LibraCrest, new List<AccessReqs> { AccessReqs.LibraCrest } },
 			{ Items.GeminiCrest, new List<AccessReqs> { AccessReqs.GeminiCrest } },
 			{ Items.MobiusCrest, new List<AccessReqs> { AccessReqs.MobiusCrest } },
@@ -214,6 +173,31 @@ namespace FFMQLib
 			{ Items.MegaGrenade, new List<AccessReqs> { AccessReqs.Bomb, AccessReqs.MegaGrenade } },
 			{ Items.ExitBook, new List<AccessReqs> { AccessReqs.ExitBook } },
 		};
+		public static Dictionary<AccessReqs, List<Items>> AccessReqItem => new Dictionary<AccessReqs, List<Items>>
+		{
+			{ AccessReqs.Elixir, new List<Items> { Items.Elixir } },
+			{ AccessReqs.TreeWither, new List<Items> { Items.TreeWither } },
+			{ AccessReqs.WakeWater, new List<Items> { Items.Wakewater } },
+			{ AccessReqs.VenusKey, new List<Items> { Items.VenusKey } },
+			{ AccessReqs.MultiKey, new List<Items> { Items.MultiKey } },
+			{ AccessReqs.ThunderRock, new List<Items> { Items.ThunderRock } },
+			{ AccessReqs.CaptainCap, new List<Items> { Items.CaptainsCap } },
+			{ AccessReqs.LibraCrest, new List<Items> { Items.LibraCrest } },
+			{ AccessReqs.GeminiCrest, new List<Items> { Items.GeminiCrest } },
+			{ AccessReqs.MobiusCrest, new List<Items> { Items.MobiusCrest } },
+			{ AccessReqs.SandCoin, new List<Items> { Items.SandCoin } },
+			{ AccessReqs.RiverCoin, new List<Items> { Items.RiverCoin } },
+			{ AccessReqs.SunCoin, new List<Items> { Items.SunCoin } },
+			{ AccessReqs.SkyCoin, new List<Items> { Items.SkyCoin } },
+			{ AccessReqs.Sword, new List<Items> { Items.SteelSword, Items.KnightSword, Items.Excalibur } },
+			{ AccessReqs.Axe, new List<Items> { Items.Axe, Items.BattleAxe, Items.GiantsAxe } },
+			{ AccessReqs.Claw, new List<Items> { Items.CatClaw, Items.CharmClaw } },
+			{ AccessReqs.DragonClaw, new List<Items> { Items.DragonClaw } },
+			{ AccessReqs.Bomb, new List<Items> { Items.Bomb, Items.JumboBomb } },
+			{ AccessReqs.SmallBomb, new List<Items> { Items.Bomb, Items.JumboBomb } },
+			{ AccessReqs.MegaGrenade, new List<Items> { Items.MegaGrenade } },
+			{ AccessReqs.ExitBook, new List<Items> { Items.ExitBook } },
+		};
 		public static List<AccessReqs> CrestsAccess = new()
 		{
 			AccessReqs.LibraCrest,
@@ -223,8 +207,8 @@ namespace FFMQLib
 		public static List<AccessReqs> FavoredCompanionsAccess = new()
 		{
 			AccessReqs.Tristam,
-			AccessReqs.Phoebe1,
-			AccessReqs.Reuben1,
+			AccessReqs.Phoebe,
+			AccessReqs.Reuben,
 		};
 		public static List<LocationIds> StartingWeaponAccess = new()
 		{
@@ -236,7 +220,6 @@ namespace FFMQLib
 			LocationIds.AliveForest,
 			LocationIds.Aquaria,
 			LocationIds.Fireburg,
-			LocationIds.Windia
 		};
 		public static List<(LocationIds, int)> LocationsByEntrances = new()
 		{

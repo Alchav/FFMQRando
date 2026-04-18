@@ -27,7 +27,7 @@ namespace FFMQLib
 		LightTemple,
 		DoomCastle
 	}
-	public enum GameFlagsList : int
+	public enum LegacyGameFlagsList : int
 	{
 		FlamerusRexDefeated = 0x01,
 		WakeWaterUsed = 0x02, // This is on IceGolemDefeated, but we transfer it to wakewater
@@ -46,6 +46,16 @@ namespace FFMQLib
 		ShowFireburgBoulder = 0x36,
 		GiantTreeUnset = 0x3A,
 		ShowPazuzuBridge = 0x3D,
+		ShowPazuzu1F = 0x40,
+		ShowPazuzu2F = 0x41,
+		ShowPazuzu3F = 0x42,
+		ShowPazuzu4F = 0x43,
+		ShowPazuzu5F = 0x44,
+		ShowPazuzu6F = 0x45,
+		ShowPazuzu7F = 0x46,
+		PazuzuSwitch2F = 0x47,
+		PazuzuSwitch4F = 0x48,
+		PazuzuSwitch6F = 0x49,
 		PhoebeHouseVisited = 0x4D,
 		UseWakeWater = 0x4F,
 		UseRiverCoin = 0x5B,
@@ -67,7 +77,7 @@ namespace FFMQLib
 		PathCuttedByKaeli = 0xE3,
 		ShowFigureForHP = 0xF0,
 	}
-	public enum NewGameFlagsList : int
+	public enum GameFlagIds : int
 	{
 		WakeWaterUsed = 0x02, 
 
@@ -77,25 +87,36 @@ namespace FFMQLib
 
 		// Kaeli new flags
 		ShowForestaKaeli = 0x62,
+		ShowLevelForestKaeli = 0xBF,
+		EnableMinotaurFight = 0x63,
 		ShowSickKaeli = 0x7D,
-		ShowWindiaKaeli = 0x68,
 		KaeliCured = 0x1F,
+		ShowWindiaKaeli = 0x68,
 		KaeliSecondItemGiven = 0xE8,
+		KaeliOpenedPath = 0xE3,
+		ShowForestaKaelisMom = 0xBA,
+		ShowWindiaKaelisMom = 0xBD,
 
 		// Tristam new flags
 		ShowSandTempleTristam = 0x5A,
+		ShowBoneDungeonTristam = 0xB9,
 		TristamBoneDungeonItemGiven = 0xC9,
 		ShowFireburgTristam = 0x53,
 		TristamFireburgItemGiven = 0xE9,
 
 		// Phoebe new flags
 		ShowLibraTemplePhoebe = 0x4E,
+		ShowWintryCavePhoebe = 0xBE,
 		PhoebeWintryItemGiven = 0xEA,
+		//PhoebeReturnedToWindia = 0xC0,
 		ShowWindiaPhoebe = 0x7E,
 
 		// Reuben new flags
-		ShowFireburgReuben = 0x5F,
+		ShowFireburgReuben1 = 0x5F,
+		ShowMineReuben = 0xBB,
 		ReubenMineItemGiven = 0xEB,
+		//ReubenReturnedToFireburg = 0xBF,
+		ShowFireburgReuben2 = 0xBC,
 
 		// Arion new flags
 		ArionItemGiven = 0xEC,
@@ -111,13 +132,50 @@ namespace FFMQLib
 		AquariaSellerItemBought = 0xD0,
 		FireburgSellerItemBought = 0xD1,
 		WindiaSellerItemBought = 0xD2,
+		FireburgSeedQuest = 0xD3,
+		WindiaSeedQuest = 0xD4,
+		WindiaSeedPending = 0xD5,
 
+		// Quests flags
+		KaeliQuest1 = 0xA9,
+		KaeliQuest2 = 0xAA,
+		KaeliQuest3 = 0xAB,
+		KaeliQuest4 = 0xAC,
+		TristamQuest1 = 0xAD,
+		TristamQuest2 = 0xAE,
+		TristamQuest3 = 0xAF,
+		TristamQuest4 = 0xB0,
+		PhoebeQuest1 = 0xB1,
+		PhoebeQuest2 = 0xB2,
+		PhoebeQuest3 = 0xB3,
+		PhoebeQuest4 = 0xB4,
+		ReubenQuest1 = 0xB5,
+		ReubenQuest2 = 0xB6,
+		ReubenQuest3 = 0xB7,
+		ReubenQuest4 = 0xB8,
 
+		ShowSquidChest = 0xE0,
+		ShowCrabChest = 0xC0,
+		ShowMedusaChest = 0x5D,
+		ShowDullahanChest = 0x2B,
 
+		ForestaHintGiven = 0xC1,
+		AquariaHintGiven = 0xC2,
+		FireburgHintGiven = 0xC3,
+		WindiaHintGiven = 0xC4,
 
+		SpencerCaveBombed = 0xC5,
+
+		// Tentative removed enemy flag
+		ShowEnemies = 0xF9,
+
+		// Invalid flag
+		None = 0x100,
 	}
 	public enum AccessReqs : int
 	{
+		None,
+
 		Elixir,
 		TreeWither,
 		WakeWater,
@@ -145,20 +203,41 @@ namespace FFMQLib
 		JumboBomb,
 		MegaGrenade,
 		
+		Kaeli,
 		Kaeli1,
 		Kaeli2,
 		Tristam,
+		TristamBoneItemGiven,
+		TristamQuestCompleted,
+		ReubenMine, // is TristamBoneItemGiven, but we switch it for compat with ap 1.4 (this is awful)
+		Phoebe,
+		PhoebeVisitedCave,
+		PhoebeQuestCompleted,
 		Phoebe1,
+		Reuben,
+		ReubenVisitedMine,
+		ReubenQuestCompleted,
 		Reuben1,
 		ReubenDadSaved,
 		Otto,
 		CaptainMac,
 		ShipSteeringWheel,
+		TreeWitherPerson,
+		HealedPerson,
+
+		TopOfVolcanoVisited,
+		ChocoboVisited,
+		LightTempleVisited,
+		PointlessLedgeVisited,
+		TreehouseVisited,
+		MountGaleVisited,
 
 		Minotaur,
 		FlamerusRex,
-		Phanquid,
-		FreezerCrab,
+		Phanquid, // Dont use, for ap comp only
+		Squidite, 
+		SnowCrab,
+		FreezerCrab, // Dont use, for ap comp only
 		IceGolem,
 		Jinn,
 		Medusa,
@@ -179,6 +258,7 @@ namespace FFMQLib
 		ShipLiberated,
 		ShipLoaned,
 		ShipDockAccess,
+		SpencerCavedIn,
 		
 		LibraTempleCrestTile,
 		LifeTempleCrestTile,
@@ -200,11 +280,16 @@ namespace FFMQLib
 		WoodHouseMobiusCrestTile,
 		
 		BarrelPushed,
-		
+
+		BoneWaterwayBombed,
 		LongSpineBombed, 
 		ShortSpineBombed, 
 		Skull1Bombed, 
-		Skull2Bombed, 
+		Skull2Bombed,
+		Skull3Bombed,
+
+		Wintry3FBombed,
+		Wintry2FBombed,
 
 		IcePyramid1FStatue, //
 		IcePyramid3FStatue,
@@ -212,6 +297,10 @@ namespace FFMQLib
 		IcePyramid5FStatue,
 
 		SpencerCaveLibraBlockBombed,
+
+		MineParallelBombed,
+		MineClimbingBombed,
+		MineCrescentBombed,
 
 		LavaDomePlate,
 
@@ -225,6 +314,25 @@ namespace FFMQLib
 		Pazuzu5F,
 		Pazuzu6F,
 
+		SkullrusRex,
+		StoneGolem,
+		TwinheadWyvern,
+		Zuh,
+		DarkKing,
+		
+		Gp150,
+		Gp200,
+		Gp300,
+		Gp500,
+		Gp600,
+		Gp900,
+		Gp1200,
+
+		PowerLevel0,
+		PowerLevel1,
+		PowerLevel2,
+		PowerLevel3,
+
 		Barred,
 	}
 	public enum TreasureType : int
@@ -236,7 +344,7 @@ namespace FFMQLib
 		Dummy
 			
 	}
-	public enum Companion : int
+	public enum CompanionsId : int
 	{
 		Benjamin = 0x00,
 		Kaeli = 0x01,
@@ -246,7 +354,8 @@ namespace FFMQLib
 		KaeliPromo = 0x05,
 		TristamPromo = 0x06,
 		PhoebePromo = 0x07,
-		ReubenPromo = 0x08
+		ReubenPromo = 0x08,
+		None = 0xFF
 	}
 	public enum ItemGivingNPCs
 	{
@@ -307,12 +416,12 @@ namespace FFMQLib
 		FlameArmor = 0x08,
 		BlackRobe = 0x09,
 		SteelShield = 0x0A,
-		VenusShield = 0x0C,
+		VenusShield = 0x0B,
 		AegisShield = 0x0C,
 		EtherShield = 0x0D,
 		Charm = 0x0E,
 		MagicRing = 0x0F,
-		CupidLock = 0x10,
+		CupidLocket = 0x10,
 	}
 	public enum SpellFlags : byte
 	{
@@ -339,7 +448,7 @@ namespace FFMQLib
 		Mask = 0x05,
 		MagicMirror = 0x06,
 		ThunderRock = 0x07,
-		CaptainCap = 0x08,
+		CaptainsCap = 0x08,
 		LibraCrest = 0x09,
 		GeminiCrest = 0x0A,
 		MobiusCrest = 0x0B,
@@ -352,13 +461,13 @@ namespace FFMQLib
 	{
 		Elixir = 0x00,
 		TreeWither = 0x01,
-		WakeWater = 0x02,
+		Wakewater = 0x02,
 		VenusKey = 0x03,
 		MultiKey = 0x04,
 		Mask = 0x05,
 		MagicMirror = 0x06,
 		ThunderRock = 0x07,
-		CaptainCap = 0x08,
+		CaptainsCap = 0x08,
 		LibraCrest = 0x09,
 		GeminiCrest = 0x0A,
 		MobiusCrest = 0x0B,
@@ -366,7 +475,7 @@ namespace FFMQLib
 		RiverCoin = 0x0D,
 		SunCoin = 0x0E,
 		SkyCoin = 0x0F,
-		Potion = 0x10,
+		CurePotion = 0x10,
 		HealPotion = 0x11,
 		Seed = 0x12,
 		Refresher = 0x13,
@@ -413,9 +522,25 @@ namespace FFMQLib
 		EtherShield = 0x3C,
 		Charm = 0x3D,
 		MagicRing = 0x3E,
-		CupidLock = 0x3F,
+		CupidLocket = 0x3F,
+		Xp54 = 0x60,
+		Xp99 = 0x61,
+		Xp540 = 0x62,
+		Xp744 = 0x63,
+		Xp816 = 0x64,
+		Xp1068 = 0x65,
+		Xp1200 = 0x66,
+		Xp2700 = 0x67,
+		Xp2808 = 0x68,
+		Gp150 = 0x69,
+		Gp300 = 0x6A,
+		Gp600 = 0x6B,
+		Gp900 = 0x6C,
+		Gp1200 = 0x6D,
 		BombRefill = 0xDD,
 		ProjectileRefill = 0xDE,
+		APItem = 0xF0,
+		APItemFiller = 0xF1,
 		None = 0xFF,
 	}
 
@@ -500,7 +625,20 @@ namespace FFMQLib
 		EnterFallBasin, // Teleport and run intro script
 		IcePyramidCheckStatue,
 		ReceiveWakeWater,
-		EnterWindiaInn // Teleport to an Inn
+		VolcanoExtraScript, // previously EnterWindiaInn
+		APMirrorMaskScript = 0x50,
+		EnterFireburgHotel = 0x60,
+		EnterWindiaInn,
+		EnterReubenHouse,
+		PointlessLedgeQuest,
+		LightTempleQuest,
+		MountGaleQuest,
+		EnterWindiaInnBedroom,
+		KaeliCuttingTree,
+		VolcanoSummitQuest,
+		SpencerEntranceFromWaterfall,
+		SpencerMegaGrenadeThrow
+			
 	}
 
 	public enum TalkScriptsList : int
@@ -570,6 +708,8 @@ namespace FFMQLib
 		TristamInFireburg02,
 		Unknown3f, // I guess I'll head back to Aquaria, prob Tristam
 		FireburgSellerGirl,
+		FireburgSeedSeller,
+		PotionVendor = 0x43,
 		MineElevatorTop = 0x48,
 		MineElevatorEntrance = 0x49,
 		MineElevatorCenter = 0x4A,
@@ -577,7 +717,9 @@ namespace FFMQLib
 		MysteriousManSealedTemple = 0x4C, 
 		FightMedusa = 0x4D,
 		GiantTree = 0x4E,
+		FightGidrah = 0x51,
 		FightHeadlessKnight = 0x54,
+		WindiaChocobo = 0x5A,
 		KaeliWindia = 0x5B,
 		Otto = 0x5C,
 		CaptainMacWindia = 0x5F,
@@ -585,6 +727,22 @@ namespace FFMQLib
 		WindiaSellerGirl = 0x67,
 		CaptainMacOnShip = 0x75,
 		VenusChest = 0x7B,
+		// Extended Talk Scripts
+		TreeHouseQuestNPC = 0x80, 
+		KaeliCuttingTree,
+		TristamBoneDungeon,
+		PhoebeWintryCave,
+		ReubenMine,
+		ReubenFireburg2,
+		KaelisMomQuest,
+		KaelisMomWindia,
+		ForestaHinter,
+		AquariaHinter,
+		FireburgHinter,
+		WindiaHinter,
+		FireburgSeedVendor,
+		WindiaSeedVendor,
+
 	}
 	public enum BattlefieldRewardType : byte
 	{
@@ -961,9 +1119,5 @@ namespace FFMQLib
 		RainbowBridgeToPazuzu,
 		RainbowBridgeToSpencer,
 		FocusTower,
-	}
-	public partial class FFMQRom : SnesRom
-	{
-
 	}
 }

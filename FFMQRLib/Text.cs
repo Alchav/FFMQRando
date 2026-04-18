@@ -7,12 +7,13 @@ using System.Security.Cryptography;
 namespace FFMQLib
 {
 
-	public partial class FFMQRom : SnesRom
+	public class MQText
 	{
-
-		public List<(string, int)> TextDTE = new() {
+		private static List<(string, int)> TextDTE = new() {
 
 			("\n", 0x01),
+			("_", 0x03), // enemy name end padding
+			("|", 0x06), // enemy name linefeed if in box, otherwise space
 			("#", 0x36), // end of box
 			("Crystal", 0x3d),
 			("Rainbow Road", 0x3e), // DTE in DTE...
@@ -168,15 +169,15 @@ namespace FFMQLib
 		};
 
 
-		public string TextToHex(string text)
+		public static string TextToHex(string text, bool enabledte = true)
 		{
-			return String.Join("", TextToByte(text).SelectMany(x => String.Join("", x.ToString("X2"))));
+			return String.Join("", TextToByte(text, enabledte).SelectMany(x => String.Join("", x.ToString("X2"))));
 		}
-		public byte[] TextToByte(string text)
+		public static byte[] TextToByte(string text, bool enabledte)
 		{
 			byte[] byteText = new byte[text.Length];
 
-			var orderedDTE = TextDTE.OrderByDescending(x => x.Item1.Length);
+			var orderedDTE = enabledte ? TextDTE.OrderByDescending(x => x.Item1.Length) : TextDTE.Where(x => x.Item2 < 0x3D || x.Item2 > 0x7F).OrderByDescending(x => x.Item1.Length);
 
 			string blackoutString = "************";
 			
@@ -193,7 +194,7 @@ namespace FFMQLib
 			}
 			return byteText.Where(x => x != 0x00).ToArray();
 		}
-		public string BytesToText(byte[] byteSeries)
+		public static string BytesToText(byte[] byteSeries)
 		{
 			string text = "";
 			
@@ -204,6 +205,26 @@ namespace FFMQLib
 			}
 
 			return text;
+		}
+
+		private static List<char> validChars = new() { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '!', '?', ',', '\'', '.', ';', ':', '/', '-', '&', '>', '%', ' ' };
+		public static string SanitizeString(string text)
+		{
+			string sanitizedtext = "";
+
+			for (int i = 0; i < text.Length; i++)
+			{
+				if (validChars.Contains(text[i]))
+				{
+					sanitizedtext += text[i];
+				}
+				else
+				{
+					sanitizedtext += '?';
+				}
+			}
+
+			return sanitizedtext;
 		}
 	}
 
@@ -231,34 +252,52 @@ namespace FFMQLib
 			
 		}
 
-		public void Update()
+		public void Update(PlayerSprite sprite, DarkKingSprite dksprite)
         {
-			FFMQRom text = new();
+			//FFMQRom text = new();
+            string spriteContributor = "";
+			string dkSpriteContributor = "";
 
-			additionalCredits = text.TextToByte(
+			if (sprite.author != "")
+			{
+                spriteContributor = sprite.name.Split(" (")[0] + " Sprite by\n" + sprite.author + "\n\n";
+            }
+
+			if (dksprite.author != "")
+			{
+				dkSpriteContributor = "Alt Dark King Sprite by\n" + dksprite.author + "\n\n";
+			}
+
+			additionalCredits = MQText.TextToByte(
 				"FFMQ Randomizer\n\n" +
 				"Main Developer\n" +
 				"wildham\n\n" +
 				"Contributors\n" +
-				"Oipo - Enemizer\n\n" +
+                "Oipo - Enemizer\n" +
+                "Alchav - Archipelago\n\n" +
+                spriteContributor +
+				dkSpriteContributor +
 				"Playtesters\n" +
 				"spellzapp\n" +
 				"caleb\n" +
 				"VampireKnight\n" +
-				"RoanMaster\n\n" +
-				"Special Thanks\n" +
+				"RoanMaster\n" +
+                "Hebinx\n\n" +
+                "Special Thanks\n" +
 				"Entroper\n" +
 				"nitz\n" +
 				"Septimus\n" +
 				"rabite\n" +
 				"DarkmoonEX\n" +
 				"Chanigan\n" +
+				"Giga Otomia\n" +
 				"abyssonym\n" +
 				"The FFR Dev Team\n" +
 				"The FFR Community\n" +
 				"&\n" +
 				"The FFMQR Community\n\n" +
-				"Original FFMQ Credits\n\n"
+				"Original FFMQ Credits\n\n",
+				true
 				);
 		}
 
@@ -304,18 +343,17 @@ namespace FFMQLib
 		private List<Blob> titleSprites;
 
 		public string versionText;
-		public string hashText;
 
 		public TitleScreen(FFMQRom rom)
 		{
 			titleSprites = rom.GetFromBank(titleScreenBank, offsetSprites, lengthSprites * qtySprites).Chunk(lengthSprites);
-			versionText = "v" + FFMQLib.Metadata.Version + (rom.beta ? "b" : "");
+			versionText = "v" + (rom.beta ?
+				FFMQLib.Metadata.BetaVersionShort :
+				FFMQLib.Metadata.Version);
 			UpdateSprites(rom.beta);
-			
-			//UpdateText();
 		}
 
-		public void Write(FFMQRom rom, string version, Blob seed, Flags flags)
+		public void Write(FFMQRom rom, string version, string hash, Flags flags)
 		{
 
 			rom.PutInBank(titleScreenBank, offsetSprites, titleSprites.SelectMany(x => x.ToBytes()).ToArray());
@@ -324,20 +362,13 @@ namespace FFMQLib
 
 			versionText = versionText.PadRight(10, ' ');
 
-			rom.PutInBank(titleScreenBank, offsetVersion, Blob.FromHex(rom.TextToHex(versionText.Substring(0,8))));
-			rom.PutInBank(titleScreenBank, offsetVersionBranch, Blob.FromHex(rom.TextToHex(versionText.Substring(8, 2))));
+			rom.PutInBank(titleScreenBank, offsetVersion, Blob.FromHex(MQText.TextToHex(versionText.Substring(0,8))));
+			rom.PutInBank(titleScreenBank, offsetVersionBranch, Blob.FromHex(MQText.TextToHex(versionText.Substring(8, 2))));
 
-			byte[] hash;
-
-			using (SHA256 hasher = SHA256.Create())
-			{
-				hash = hasher.ComputeHash(seed + flags.EncodedFlagString());
-			}
-
-			hashText = EncodeTo32(hash).Substring(0, 8);
-			rom.PutInBank(titleScreenBank, offsetHash, rom.TextToByte(hashText));
+			rom.PutInBank(titleScreenBank, offsetHash, MQText.TextToByte(hash, false));
 		}
-		private string EncodeTo32(byte[] bytesToEncode)
+
+		public static string EncodeTo32(byte[] bytesToEncode)
 		{
 			string characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
 

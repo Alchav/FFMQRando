@@ -1,8 +1,6 @@
 [build]
   publish = "./publishoutput/wwwroot"
 
-  command = "dotnet build FFMQWebAsm --configuration Release && dotnet publish FFMQWebAsm -c Release --no-build -o publishoutput"
-
 [[redirects]]
   from = "https://dev.ffmqrando.net/"
   to = "https://scintillating-tiramisu-75521b.netlify.app/"
@@ -13,3 +11,16 @@
   to = "https://scintillating-tiramisu-75521b.netlify.app/:splat"
   status = 200
   force = true
+[[redirects]]
+  from = "https://api.ffmqrando.net/*"
+  to = "https://ffmqrapi.azurewebsites.net/:splat"
+  status = 200
+  force = true
+[[redirects]]
+  from = "/Archipelago"
+  to = "/index.html"
+  status = 200
+[[redirects]]
+  from = "/ImprovedVanilla"
+  to = "/index.html"
+  status = 200

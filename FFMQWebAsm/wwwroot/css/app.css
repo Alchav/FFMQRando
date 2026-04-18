@@ -12,6 +12,11 @@ h2 {
     text-align: center;
 }
 
+.text-over-dropdown {
+    position: absolute;
+    margin-top: -42px;
+}
+
 .btn-primary {
     color: #fff;
     background-color: #1b6ec2;
@@ -78,7 +83,7 @@ h2 {
     flex: 1;
     border-radius: 0px;
     gap: 0px 20px;
-    align-content: center;
+    align-content: flex-start;
 }
 
 .box-title {
@@ -134,6 +139,16 @@ h2 {
     min-width: 200px;
 }
 
+.dropdown-toggle {
+    width: 100%;
+    text-align: left;
+}
+
+.sprite-icon {
+    width: 32px;
+    height: 32px;
+    image-rendering: pixelated;
+}
 
 #blazor-error-ui {
     background: lightyellow;

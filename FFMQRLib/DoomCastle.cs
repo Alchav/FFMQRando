@@ -16,6 +16,15 @@ namespace FFMQLib
 		[Description("Dark King Only")]
 		DarkKingOnly,
 	}
+	public enum DoomCastleAccess : int
+	{
+		[Description("Standard")]
+		Standard = 0,
+		[Description("Freed Ship")]
+		FreedShip,
+		[Description("Shortcut")]
+		FocusTowerShortcut,
+	}
 	public partial class FFMQRom : SnesRom
 	{
 		public void SetDoomCastleMode(DoomCastleModes doomcastlemode)
@@ -135,16 +144,14 @@ namespace FFMQLib
 					}
 				}
 
-				mapsritesindex = (byte)MapSpriteSets.MapSpriteSets.Count;
-
-				MapSpriteSets.MapSpriteSets.Add(new MapSpriteSet(
+				mapsritesindex = (byte)MapSpriteSets.Add(new MapSpriteSet(
 					new List<byte> { 0x52, 0x50, 0x56, 0x54, 0x1f, 0x1e },
 					new List<SpriteAddressor> {
-						new SpriteAddressor(4, 0x13, SpriteSize.Tiles16),
-						new SpriteAddressor(7, 0x27, SpriteSize.Tiles16),
-						new SpriteAddressor(8, 0x14, SpriteSize.Tiles16),
-						new SpriteAddressor(16, 0x15, SpriteSize.Tiles16),
-						new SpriteAddressor(24, 0x16, SpriteSize.Tiles16),
+						new SpriteAddressor(1, 0, 0x13, SpriteSize.Tiles16),
+						new SpriteAddressor(3, 0, 0x14, SpriteSize.Tiles16),
+						new SpriteAddressor(5, 0, 0x15, SpriteSize.Tiles16),
+						new SpriteAddressor(8, 0, 0x16, SpriteSize.Tiles16),
+						new SpriteAddressor(10, 0, 0x27, SpriteSize.Tiles16),
 					},
 					true
 					));
@@ -226,9 +233,15 @@ namespace FFMQLib
 			MapObjects.ModifyAreaAttribute(DoomCastleObjectsId, 2, mapsritesindex);
 
 			// Kill blocking stones map changes
+			MapChanges.Replace(0x0F, new MapChange(0,0,1,1, new byte[1, 1] { { 0x0F } } ));
+			MapChanges.Replace(0x10, new MapChange(0, 0, 1, 1, new byte[1, 1] { { 0x0F } }));
+			MapChanges.Replace(0x11, new MapChange(0, 0, 1, 1, new byte[1, 1] { { 0x0F } }));
+
+			/*
 			MapChanges.Replace(0x0F, Blob.FromHex("0000110F"));
 			MapChanges.Replace(0x10, Blob.FromHex("0000110F"));
 			MapChanges.Replace(0x11, Blob.FromHex("0000110F"));
+			*/
 
 			// Add an extra space in focus tower for extra boxes
 			GameMaps[(int)MapList.FocusTower].ModifyMap(0x0E, 0x1C, new List<List<byte>> {
@@ -258,22 +271,26 @@ namespace FFMQLib
 			}
 		}
 
-		public void DoomCastleShortcut(bool enable)
+		public void DoomCastleShortcut(DoomCastleAccess access)
 		{
-			if (!enable)
+			if (access == DoomCastleAccess.Standard)
 			{
 				return;
 			}
 
-			// Add arrow to doom castle
-			Overworld.DoomCastleShortcut();
+			// Overworld modifications
+			if (access == DoomCastleAccess.FocusTowerShortcut)
+			{
+				// Add arrow to doom castle
+				Overworld.DoomCastleShortcut();
 
-			// Add bridge
-			GameMaps[(int)MapList.Overworld].ModifyMap(0x1C, 0x24, new List<List<byte>> {
-				new List<byte> {  0x56 },
-				new List<byte> {  0x56 },
-				new List<byte> {  0x56 },
-			});
+				// Add bridge
+				GameMaps[(int)MapList.Overworld].ModifyMap(0x1C, 0x24, new List<List<byte>> {
+					new List<byte> {  0x56 },
+					new List<byte> {  0x56 },
+					new List<byte> {  0x56 },
+					});
+			}
 
 			// Modify Desert floor to not require megagrenade/dragonclaw
 			GameMaps[(int)MapList.FocusTowerBase].ModifyMap(0x1F, 0x11, new List<List<byte>> {

@@ -8,16 +8,17 @@ namespace FFMQLib
 {
 	public partial class FFMQRom : SnesRom
 	{
-		public void RandomBenjaminPalette(bool enable, MT19337 rng)
+		public void WindowPalette(ushort palette)
+		{
+			PutInBank(0x07, 0x800A, Blob.FromUShorts(new ushort[] { palette } ));
+		}
+        public void RandomBenjaminPalette(bool enable, MT19337 rng)
 		{
 			if (!enable)
 			{
-				rng.Next();
 				return;
 			}
 			
-			var rngback = rng;
-
 			List<(int red, int green, int blue)> skinTones = new()
 			{
 				(17, 10, 4),
@@ -69,9 +70,6 @@ namespace FFMQLib
 			};
 
 			PutInBank(0x07, 0xD828, palette.ToArray());
-			
-			rng = rngback;
-			rng.Next();
 		}
 	}
 }

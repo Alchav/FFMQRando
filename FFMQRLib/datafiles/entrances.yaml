@@ -722,7 +722,7 @@
   id: 143
   area: 43
   coordinates: [48, 57]
-  teleporter: [81, 0]
+  teleporter: [105, 8] # Previous direct teleporter, now script [81, 0]
 - name: Spencer Waterfall - Upper Exit to Aquaria 1
   id: 144
   area: 43
@@ -758,11 +758,21 @@
   area: 44
   coordinates: [14, 39]
   teleporter: [85, 0]
+- name: Spencer Cave Normal - Throw Bomb Script
+  id: 496
+  area: 44
+  coordinates: [15, 56]
+  teleporter: [106, 8]
 - name: Spencer Cave Normal From Overworld - Exit to Overworld
   id: 151
   area: 44
   coordinates: [15, 57]
   teleporter: [7, 6]
+- name: Spencer Cave Unplug - To Waterfall # We added this one
+  id: 482
+  area: 45
+  coordinates: [0x25, 0x0F]
+  teleporter: [85, 0]
 - name: Spencer Cave Unplug - Exit to Overworld
   id: 152
   area: 45
@@ -827,12 +837,12 @@
   id: 164
   area: 47
   coordinates: [14, 6]
-  teleporter: [16, 2]
+  teleporter: [98, 8] # Script for reuben, original value [16, 2]
 - name: Fireburg - Hotel
   id: 165
   area: 47
   coordinates: [20, 8]
-  teleporter: [17, 2]
+  teleporter: [96, 8] # It's a script now for tristam, original value [17, 2]
 - name: Fireburg - GrenadeMan House Script
   id: 166
   area: 47
@@ -1008,6 +1018,11 @@
   area: 55
   coordinates: [52, 24]
   teleporter: [79, 8]  # Original Value [26, 8]
+- name: Volcano Top - Visit Quest Script 1
+  id: 495
+  area: 55
+  coordinates: [43, 12]
+  teleporter: [104, 8]
 - name: Volcano Right Path - To Volcano Base Script
   id: 201
   area: 56
@@ -1178,6 +1193,16 @@
   area: 60
   coordinates: [2, 7]
   teleporter: [123, 0]
+- name: Lava Dome Pointless Room - Visit Quest Script 1
+  id: 490
+  area: 60
+  coordinates: [4, 4]
+  teleporter: [99, 8]
+- name: Lava Dome Pointless Room - Visit Quest Script 2
+  id: 491
+  area: 60
+  coordinates: [4, 5]
+  teleporter: [99, 8]
 - name: Lava Dome Lower Moon Helm Room - Left Entrance
   id: 235
   area: 60
@@ -1568,6 +1593,11 @@
   area: 79
   coordinates: [2, 45]
   teleporter: [174, 0]
+- name: Mount Gale - Visit Quest
+  id: 494
+  area: 79
+  coordinates: [44, 7]
+  teleporter: [101, 8]
 - name: Windia - Main Entrance 1
   id: 312
   area: 80
@@ -1613,11 +1643,11 @@
   area: 80
   coordinates: [21, 39]
   teleporter: [30, 5]
-- name: Windia - INN's Script # Change to teleporter
+- name: Windia - INN's Script # Change to teleporter /  Change back to script!
   id: 321
   area: 80
   coordinates: [18, 34]
-  teleporter: [31, 2] # Original value [79, 8]
+  teleporter: [97, 8] # Original value [79, 8] > [31, 2]
 - name: Windia - Vendor House
   id: 322
   area: 80
@@ -1697,7 +1727,7 @@
   id: 337
   area: 82
   coordinates: [45, 24]
-  teleporter: [215, 0]
+  teleporter: [102, 8]          # Changed to script, original value [215, 0]
 - name: Windia Inn Lobby - Exit
   id: 338
   area: 82
@@ -1998,6 +2028,16 @@
   area: 95
   coordinates: [29, 37]
   teleporter: [70, 8]
+- name: Light Temple - Visit Quest Script 1
+  id: 492
+  area: 95
+  coordinates: [34, 39]
+  teleporter: [100, 8]
+- name: Light Temple - Visit Quest Script 2
+  id: 493
+  area: 95
+  coordinates: [35, 39]
+  teleporter: [100, 8]
 - name: Ship Dock - Mobius Teleporter Script
   id: 397
   area: 96

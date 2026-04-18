@@ -1,6 +1,7 @@
 ﻿@page "/"
 @using Microsoft.AspNetCore.Components.Forms
 @using System.IO;
+@using System.IO.Compression;
 @using System;
 @using System.Web
 @using System.Net.Http
@@ -13,747 +14,592 @@
 @using Microsoft.AspNetCore.Components
 @inject IJSRuntime JS
 @inject NavigationManager NavigationManager
-@inject Blazored.LocalStorage.ISyncLocalStorageService localStorage
+@inject Blazored.LocalStorage.ILocalStorageService localStorage
 @inject HttpClient Http
 
 
 <style>
-    body {
+	body {
 
-        background: linear-gradient(rgba(27,42,81,1),rgba(85,109,171,1)) no-repeat center fixed;
-        background-size: cover;
-    }
+		background: linear-gradient(rgba(27,42,81,1),rgba(85,109,171,1)) no-repeat center fixed;
+		background-size: cover;
+	}
 </style>
 
-<div class="@(sandboxMode ? "center-logo-sandbox" : "center-logo")">
-    @if (sandboxMode)
-    {
-        <img height=@titleHeight src="logo/logosandbox_hebinx.gif" />
-    }
-    else
-    {
-        <img height=@titleHeight src="@titleLetters[0]" /><img height=@titleHeight src="@titleLetters[1]" /><img height=@titleHeight src="@titleLetters[2]" /><img height=@titleHeight src="@titleLetters[3]" /><img height=@titleHeight src="@titleLetters[4]" /><img height=@titleHeight src="@titleLetters[5]" /><img height=@titleHeight src="logo/mqlogo_.png" /><img height=@titleHeight src="@titleLetters[6]" /><img height=@titleHeight src="@titleLetters[7]" /><img height=@titleHeight src="@titleLetters[8]" /><img height=@titleHeight src="@titleLetters[9]" /><img height=@titleHeight src="@titleLetters[10]" />
-    }
-</div>
-<h1 class="text-secondary text-center" style="font-size: 1em">A FFMQ Randomizer<br />@("v" + @FFMQLib.Metadata.Version + (@betaStatus ? "-beta" : "") + (@sandboxMode ? " Sandbox" : ""))</h1>
+@if(loadingDone)
+{
+	<div class="@("center-logo")">
+		<img style="max-width:100%; height:140px; position: relative; margin-top:-40px" alt="FFMQ Randomizer Logo" src="logo/FFMQRLogo-Final-Web.svg" />
+		<h1 class="text-secondary" style="font-size: 1em; text-align: right">@("v" + (@betaStatus ? @FFMQLib.Metadata.BetaVersionLong : @FFMQLib.Metadata.Version))</h1>
+	</div>
 
+	<div id="fileSection"><br /><br /></div>
 
-<div id="fileSection"><br /><br /></div>
+	<PresetsSection Name="Presets" SetPresetAction="OnPresetAction" SetExportFile="OnExportYaml" DisableExport="@flags.HiddenFlags"/>
 
-<PresetsSection Name="Presets" SetPresetAction="@OnPresetAction" SetExportFile="@OnExportYaml"/>
+	<div><br /></div>
+}
 
-<div><br /></div>
+<Container class="sectionBox" Style=@(loadingDone ? "" : "display: none")>
+	<div class="box-title text-secondary">
+		Generation       
+	</div> 
 
-<Container class="sectionBox">
-    <div class="box-title text-secondary">
-        Generation       
-    </div> 
+	<Container Class="flagBox">
+		<Container Class="flagColumn">
+			<GenerateButton Flags="flags" Seed="seed" ApConfigs="apConfigs" Preferences="preferences" Beta="@GetBetaStatus()" IsLoadFromMemoryDone="LoadFromMemoryDone" />
 
-    <Container Class="flagBox">
-        <Container Class="flagColumn">
-        @if(!romLoaded)
-        {
-            <Field class="romFlag">
-                <FieldLabel TextColor="TextColor.Secondary" class="fw-bold">ROM</FieldLabel> 
-                <FileEdit Filter=".sfc" AutoReset="false" Changed="@LoadFiles"></FileEdit>
-                <FieldHelp>@romMessage</FieldHelp>
-            </Field>
-        }
-        else
-        {
-            <Field class="romFlag">
-                <FieldLabel TextColor="TextColor.Secondary" class="fw-bold">ROM</FieldLabel> 
-                <Button Color="Color.Primary" Loading="@isGenerating" Clicked="@OnGenerate" Disabled="@isLoadingRom" class="romBtn">Generate</Button>
-                <FieldHelp>@romMessage</FieldHelp>
-            </Field>
-        }
-
-            <Fields class="dropFlag">
-                <Field>
-                    <FieldLabel TextColor="TextColor.Secondary" class="fw-bold">Seed</FieldLabel> 
-                    <TextEdit Placeholder="Seed" Text="@showSeed" FocusOut="@SeedOnLoseFocus" KeyUp="@SeedOnKeyUp" TextChanged="@SeedOnChanged"/>
-                    <FieldHelp>@seedMessage</FieldHelp>
-                </Field>
-                <Field>
-                    <FieldLabel Visibility="Visibility.Invisible">None</FieldLabel>
-                    <Button Color="Color.Primary" Clicked="@RollSeed" class="field-button romBtn">Roll Seed</Button>
-                </Field>
-            </Fields>
-        </Container>
-        <Container Class="flagColumn">
-            <Fields class="dropFlag">
-                <Field>
-                    <FieldLabel TextColor="TextColor.Secondary" class="fw-bold">Flag String</FieldLabel> 
-                    <TextEdit Placeholder="Flag string" Text="@flagString" FocusOut="@FlagsOnLoseFocus" KeyUp="@FlagsOnKeyUp" TextChanged="@FlagsOnChanged"/>
-                    <FieldHelp>@flagsMessage</FieldHelp>
-                </Field>
-            </Fields>
-
-        @if(romLoaded)
-        {
-            <a href="" @onclick="@UnloadRom" @onclick:preventDefault>Use a different ROM file</a>
-        }
-        </Container>
-    </Container>
+			<Fields class="dropFlag">
+				<Field>
+					<FieldLabel TextColor="TextColor.Secondary" class="fw-bold">Seed</FieldLabel> 
+						<TextEdit Placeholder="Seed" Text="@showSeed" FocusOut="@SeedOnLoseFocus" KeyUp="@SeedOnKeyUp" TextChanged="@SeedOnChanged"/>
+					<FieldHelp>@seedMessage</FieldHelp>
+				</Field>
+				<Field>
+					<FieldLabel Visibility="Visibility.Invisible">None</FieldLabel>
+						<Button Color="Color.Primary" Clicked="@RollSeed" class="field-button romBtn">Roll Seed</Button>
+				</Field>
+			</Fields>
+		</Container>
+		<Container Class="flagColumn">
+			<Fields class="dropFlag">
+				<Field>
+					<FieldLabel TextColor="TextColor.Secondary" class="fw-bold">Flag String</FieldLabel> 
+						<TextEdit Placeholder="Flag string" Text="@flagString" FocusOut="@FlagsOnLoseFocus" KeyUp="@FlagsOnKeyUp" TextChanged="@FlagsOnChanged"/>
+					<FieldHelp>@flagsMessage</FieldHelp>
+				</Field>
+			</Fields>
+		</Container>
+	</Container>
 </Container>
 
+@if (loadingDone && !flags.HiddenFlags)
+{
 
-<div id="optionsSection"><br /></div>
-<h2 class="text-secondary">Customization</h2>
-<div><br /></div>
+	<div id="optionsSection"><br /></div>
+	<h2 class="text-secondary">Customization</h2>
+	<div><br /></div>
+
+	<Container class="sectionBox">
+		<div class="box-title text-secondary">Quest Items</div> 
+
+		<Container Class="flagBox">
+			<Container Class="flagColumn">
+				<div class="form-label fw-bold text-secondary" style="font-size: 1.3em">
+				<Tooltip Text="Govern how shuffled Quest Items will be placed.<br /><br />Prioritize: Quest Items will always be found in these locations.<br /><br />Include: Quest Items may be found in these locations.<br /><br />Exclude: Quest Items will never be found in these locations.<br /><br />When some locations aren't prioritized (either included or excluded), Quest Items may land in brown boxes, in which case these locations will show up as Chests."
+						 Inline
+						 Multiline Placement="TooltipPlacement.Right">
+					Items Placement
+					<Icon TextColor="TextColor.Secondary" Name="IconName.QuestionCircle" IconSize=IconSize.Small />
+				</Tooltip>
+				</div>
+				<EnumFlag UsePreset=usePreset Name="Original Chests" @bind-Value="flags.ChestsShuffle" Tooltip="Original Chests are all the red chests locations in the original game, except the Venus Key Chest in Focus Tower and the new Locked Chest in Spencer's Cave, which count as NPCs.<br /><br />If a chest doesn't contain a Quest Item, it will show up as a brown box." />
+				<EnumFlag UsePreset=usePreset Name="NPCs" @bind-Value="flags.NpcsShuffle" Tooltip="NPCs are all the NPC locations in the original game, as well as the new Reuben item in Mine, the Venus Key Chest in Focus Tower and the new Locked Chest in Spencer's Cave." />
+				<EnumFlag UsePreset=usePreset Name="Battlefields" @bind-Value="flags.BattlefieldsShuffle" Tooltip="Battlefields are all the battlefields that gave a Quest Item in the original game; if Shuffle Battlefields Rewards is enabled, the locations will change, but the same number of battlefields will offer an item." />
+			</Container>
+			<Container Class="flagColumn">
+				<EnumFlag UsePreset=usePreset Name="Logic" @bind-Value="flags.LogicOptions" Tooltip="Placement logic sets the rules that will be applied when placing items.<br /><br />Friendly: Required Items to clear a dungeon will never be placed in that dungeon to avoid the need to revisit it. Also, the Magic Mirror and the Mask will always be available before Ice Pyramid and Volcano, respectively. Note: If Dungeons are shuffled, Friendly logic will only ensure the availability of the Mirror and the Mask.<br /><br />Standard: Items are randomly placed and logic merely verifies that they're all accessible. As for Region access, only the Coins are considered.<br /><br />Expert: Same as Standard, but Items Placement logic also includes other routes than Coins: the Crests Teleporters, the Fireburg-Aquaria Lava bridge, the Aquaria-Spencer's Cave-Rainbow Bridge path and the Sealed Temple Exit trick." />
+				<EnumFlag UsePreset=usePreset Name="Sky Coin Mode" @bind-Value="flags.SkyCoinMode" Tooltip="Configure how the Sky Coin is acquired.<br /><br />Standard: The Sky Coin will be found in a chest.<br /><br />Start With: The Sky Coin will be in your inventory at the start of the game.<br /><br />Save the Crystals: The Sky Coin will be acquired once you save all 4 crystals.<br /><br />Shattered: The Sky Coin is split in 40 fragments; you can enter Doom Castle once the required amount is found." />
+				@if (flags.SkyCoinMode == SkyCoinModes.ShatteredSkyCoin)
+				{
+					<EnumFlag UsePreset=usePreset Name="Sky Fragments Quantity" @bind-Value="flags.SkyCoinFragmentsQty" Tooltip="Set the number of Sky Coin Fragments required to enter Doom Castle.<br /><br />Random select one of the 3 previous options at random." />
+				}
+				<BoolFlag UsePreset=usePreset Name="Random Starting Weapon" @bind-Value="flags.RandomStartingWeapon" Tooltip="Replace the usual starting weapon with the Steel Sword, the Axe, the Cat Claw or the Bomb." />
+				<BoolFlag UsePreset=usePreset Name="Progressive Gear" @bind-Value="flags.ProgressiveGear" Tooltip="Pieces of gear are always acquired from weakest to strongest in a set.<br/><br/>Eg. you'll always received the Steel Sword first, then the Knight Sword and finally Excalibur, irrespective of the order the chests are opened." />
+			</Container>
+		</Container>
+	</Container>
+	<div><br /></div>
+
+	<Container class="sectionBox">
+		<div class="box-title text-secondary">Consumables</div>
+
+		<Container Class="flagBox">
+			<Container Class="flagColumn">
+				<BoolFlag UsePreset=usePreset Name="Shuffle Boxes' Content" @bind-Value="flags.ShuffleBoxesContent" Tooltip="If enabled, the content of brown boxes will be shuffled amongst themselves." />
+				<BoolFlag UsePreset=usePreset Name="Boxes Don't Reset" @bind-Value="flags.BoxesDontReset" Tooltip="If enabled, brown boxes don't reset once opened." />
+			</Container>
+			<Container Class="flagColumn">
+				<EnumFlag UsePreset=usePreset Name="Seed Vendors" @bind-Value="flags.SeedVendorsSetting" Tooltip="Set Seed Vendors requirements.<br/><br/>Standard: No requirement for Fireburg Vendor, Windia Vendor needs Dullahan to be defeated.<br/><br/>No Vendors: No vendors sell seeds. This include the vendor on Mac Ship.<br/><br/>Defeat Jinn: Fireburg Vendor requires Jinn to be defeated, Windia Vendor still requires Dullahan.<br/><br/>Random Bosses: Both Vendors require a random boss to be defeated." />
+				<EnumFlag UsePreset=usePreset Name="World Seed Supply" @bind-Value="flags.SeedQuantity" Tooltip="Set the number of locations containing Seeds.<br/><br/>Regardless of the option selected, the Hero Chest before the Dark King will always contain Seeds and isn't included in the count." />
+				<BoolFlag UsePreset=usePreset Name="Disable Seed Duping" @bind-Value="flags.DisableDuping" Tooltip="Fix the bug allowing you to duplicate consumable items when cancelling the command and running away from battle." />
+			</Container>
+		</Container>
+	</Container>
+	<div><br /></div>
 
 <Container class="sectionBox">
-    <div class="box-title text-secondary">
-        Items
-        <Tooltip Text="Govern how shuffled Quest Items will be placed.<br /><br />Prioritize: Quest Items will always be found in these locations.<br /><br />Include: Quest Items may be found in these locations.<br /><br />Exclude: Quest Items will never be found in these locations." Inline Multiline Placement="TooltipPlacement.Right">
-            <Icon TextColor="TextColor.Secondary" Name="IconName.QuestionCircle" IconSize=IconSize.Small style="font-size: 0.600em"/> 
-        </Tooltip>       
-    </div> 
-
-    <Container Class="flagBox">
-        <Container Class="flagColumn">
-            <EnumFlag UsePreset=usePreset Name="Logic" @bind-Value="flags.LogicOptions" Tooltip="Placement logic sets the rules that will be applied when placing items.<br /><br />Friendly: Required Items to clear a dungeon will never be placed in that dungeon to avoid the need to revisit it. Also, the Magic Mirror and the Mask will always be available before Ice Pyramid and Volcano, respectively. Note: If Dungeons are shuffled, Friendly logic will only ensure the availability of the Mirror and the Mask.<br /><br />Standard: Items are randomly placed and logic merely verifies that they're all accessible. As for Region access, only the Coins are considered.<br /><br />Expert: Same as Standard, but Items Placement logic also includes other routes than Coins: the Crests Teleporters, the Fireburg-Aquaria Lava bridge and the Sealed Temple Exit trick." />
-            <EnumFlag UsePreset=usePreset Name="Original Chests" @bind-Value="flags.ChestsShuffle" Tooltip="Original Chests are all the red chests locations in the original game, except the Venus Key Chest in Focus Tower and the new Locked Chest in Spencer's Cave, which count as NPCs.<br /><br />If a chest doesn't contain a Quest Item, it will show up as a brown box." />
-            <EnumFlag UsePreset=usePreset Name="NPCs" @bind-Value="flags.NpcsShuffle" Tooltip="NPCs are all the NPC locations in the original game, as well as the new Reuben item in Mine, the Venus Key Chest in Focus Tower and the new Locked Chest in Spencer's Cave." />
-            <EnumFlag UsePreset=usePreset Name="Battlefields" @bind-Value="flags.BattlefieldsShuffle" Tooltip="Battlefields are all the battlefields that gave a Quest Item in the original game; if Shuffle Battlefields Rewards is enabled, the locations will change, but the same number of battlefields will offer an item." />
-            <EnumFlag UsePreset=usePreset Name="Brown Boxes" @bind-Value="flags.BoxesShuffle" Tooltip="Brown Boxes are all the boxes that contained a consumable in the original game.<br /><br />If a brown box is selected to contain a Quest Item, it will show up as a red chest." />
-        </Container>
-        <Container Class="flagColumn">
-            <EnumFlag UsePreset=usePreset Name="Sky Coin Mode" @bind-Value="flags.SkyCoinMode" Tooltip="Configure how the Sky Coin is acquired.<br /><br />Standard: The Sky Coin will be found in a chest.<br /><br />Start With: The Sky Coin will be in your inventory at the start of the game.<br /><br />Save the Crystals: The Sky Coin will be acquired once you save all 4 crystals.<br /><br />Shattered: The Sky Coin is split in 40 fragments; you can enter Doom Castle once the required amount is found." />
-            @if (flags.SkyCoinMode == SkyCoinModes.ShatteredSkyCoin)
-            { 
-                <EnumFlag UsePreset=usePreset Name="Sky Fragments Quantity" @bind-Value="flags.SkyCoinFragmentsQty" Tooltip="Set the number of Sky Coin Fragments required to enter Doom Castle.<br /><br />Random select one of the 3 previous options at random." />
-            }
-            <BoolFlag UsePreset=usePreset Name="Shuffle Brown Boxes' Content" @bind-Value="flags.ShuffleBoxesContent" Tooltip="If enabled, the content of brown boxes will be shuffled amongst themselves." />
-            <BoolFlag UsePreset=usePreset Name="Random Starting Weapon" @bind-Value="flags.RandomStartingWeapon" Tooltip="Replace the usual starting weapon with the Steel Sword, the Axe, the Cat Claw or the Bomb." />
-            <BoolFlag UsePreset=usePreset Name="Progressive Gear" @bind-Value="flags.ProgressiveGear" Tooltip="Pieces of gear are always acquired from weakest to strongest in a set.<br/><br/>Eg. you'll always received the Steel Sword first, then the Knight Sword and finally Excalibur, irrespective of the order the chests are opened." />
-        </Container>
-    </Container>
-</Container>
-
-<div><br /></div>
-
-<Container class="sectionBox">
-    <div class="box-title text-secondary">Enemies</div> 
-
-    <Container Class="flagBox">
-        <Container Class="flagColumn">
-            <EnumFlag UsePreset=usePreset Name="Enemies Density" @bind-Value="flags.EnemiesDensity" Tooltip="Set how many enemies are on each maps." />
-            <DoubleEnumFlag UsePreset=usePreset Name="Standard Enemies Scaling" @bind-Value="flags.EnemiesScalingLower" @bind-Value2="flags.EnemiesScalingUpper" Tooltip="Randomly adjust enemies stats by the selected range percentage.<br/><br/>Include mini-bosses' weaker clones." />
-            <DoubleEnumFlag UsePreset=usePreset Name="Bosses Scaling" @bind-Value="flags.BossesScalingLower" @bind-Value2="flags.BossesScalingUpper" Tooltip="Randomly adjust bosses stats by the selected range percentage.<br/><br/>Include Mini-Bosses, Bosses, Bosses' refights and the Dark King." />
-            <EnumFlag UsePreset=usePreset Name="Enemizer Attacks" @bind-Value="flags.EnemizerAttacks" Tooltip="Shuffles enemy attacks.<br /><br />Standard: No shuffle.<br /><br />Safe Randomization: Randomize every attack but leave out self-destruct and Dark King attacks<br /><br />Chaos Randomization: Randomize and include self destruct and Dark King attacks<br /><br />Self-destruct: Every enemy self destructs<br /><br />Simple Shuffle: Instead of randomizing, shuffle one monsters attacks to another. Dark King is left vanilla." />
-        </Container>
-        <Container Class="flagColumn">
-            <BoolFlag UsePreset=usePreset Name="Shuffle Enemies' Positions" @bind-Value="flags.ShuffleEnemiesPosition" Tooltip="Instead of their original position in a given map, enemies are randomly placed." />
-            <EnumFlag UsePreset=usePreset Name="Progressive Formations" @bind-Value="flags.ProgressiveFormations" Tooltip="Enemies' formations are selected by regions, with the weakest formations always selected in Foresta and the strongest in Windia.<br /><br />Disabled: Standard formations are used.<br /><br />By Regions (Strict): Formations will come exclusively from the current region, whatever the map is.<br /><br />By Regions (Keep Type): Formations will keep the original formation type and match with the nearest power level." />
-        </Container>
-    </Container>
-</Container>
-
-<div><br /></div>
-
-<Container class="sectionBox">
-    <div class="box-title text-secondary">Maps</div> 
-
-    <Container Class="flagBox">
-        <Container Class="flagColumn">
-            <EnumFlag UsePreset=usePreset Name="Doom Castle" @bind-Value="flags.DoomCastleMode" Tooltip="Change how you reach the Dark King.<br/><br/>Standard: You need to defeat all four bosses and their floors to reach the Dark King.<br/><br/>Boss Rush: Only the bosses are blocking your way in the corridor to the Dark King's room.<br/><br/>Dark King Only: The way to the Dark King is free of any obstacle." />
-            <BoolFlag UsePreset=usePreset Name="Doom Castle Shortcut" @bind-Value="flags.DoomCastleShortcut" Tooltip="Create a shortcut granting access from the start to Doom Castle at Focus Tower's entrance.<br/><br/>Also modify the Desert floor so it can be navigated without the Mega Grenades and the Dragon Claw." />
-        </Container>
-        <Container Class="flagColumn">
-            <BoolFlag UsePreset=usePreset Name="Tweak Frustrating Dungeons" @bind-Value="flags.TweakedDungeons" Tooltip="Make some small changes to a few of the most annoying dungeons.<br/><br/>Ice Pyramid: Add 3 shortcuts on the 1st floor.<br/><br/>Giant Tree: Add shortcuts on the 1st and 4th floors and curtail mushrooms population.<br/><br/>Pazuzu's Tower: Staircases are devoid of enemies (regardless of Enemies Density settings)." />
-            <EnumFlag UsePreset=usePreset Name="Maps Shuffle" @bind-Value="flags.MapShuffling" Tooltip="Shuffle locations.<br /><br />None: No shuffle.<br /><br />Overworld: Only shuffle the Overworld locations.<br /><br />Dungeons: Only shuffle the dungeons' floors amongst themselves. Temples and Towns aren't included.<br /><br />Overworld+Dungeons: Shuffle the Overworld and dungeons at the same time.<br /><br />Everything: Shuffle the Overworld, dungeons, temples and towns all amongst each others.<br/><br/>When dungeons are shuffled, defeating Pazuzu won't teleport you to the 7th floor, you have to get there normally to save the Crystal and get Pazuzu's Chest." />
-            <BoolFlag UsePreset=usePreset Name="Crests Shuffle" @bind-Value="flags.CrestShuffle" Tooltip="Shuffle the Crest tiles amongst themselves." />        
-        </Container>
-    </Container>
+	<div class="box-title text-secondary">Enemies</div> 
+	<Container Class="flagBox">
+		<Container Class="flagColumn">
+			<DoubleEnumFlag UsePreset=usePreset Name="Standard Enemies Scaling" @bind-Value="flags.EnemiesScalingLower" @bind-Value2="flags.EnemiesScalingUpper" Tooltip="Randomly adjust enemies stats by the selected range percentage.<br/><br/>Include mini-bosses' weaker clones." />
+			<DoubleEnumFlag UsePreset=usePreset Name="Bosses Scaling" @bind-Value="flags.BossesScalingLower" @bind-Value2="flags.BossesScalingUpper" Tooltip="Randomly adjust bosses stats by the selected range percentage.<br/><br/>Include Mini-Bosses, Bosses, Bosses' refights and the Dark King." />
+				<EnumFlag UsePreset=usePreset Name="Enemizer" @bind-Value="flags.EnemizerAttacks" Tooltip="Modify enemies.<br /><br />Disabled: No modification.<br /><br />Balanced: Randomize every attack, but remove self-destruct and multiply; only the Dark Castle's bosses can get Dark King attacks.<br /><br />Balanced Expert: Same as balanced, but enemies tends to have stronger attacks.<br /><br />Elemental: Enemies are assigned an element. They get an appropriate Elemental attack, resist that element and become weak to the opposite element.<br/>Fire: Weak to Water.<br/>Water: Weak to Earth.<br/>Earth: Weak to Air.<br/>Air: Weak to Fire.<br/>Thunder: Weak to Fire & Earth.<br /><br />Chaos Randomization: Randomize every attack. Any attack is possible.<br /><br />Self-destruct: Every enemy self destructs<br /><br />Script Shuffle: Shuffle the whole attack script between each enemies." />
+				@if (flags.EnemizerAttacks != EnemizerAttacks.Normal)
+				{
+					<EnumFlag UsePreset=usePreset Name="Enemizer Groups" @bind-Value="flags.EnemizerGroups" Tooltip="Set which enemies groups will be affected by Enemizer." />
+				}
+			<BoolFlag UsePreset=usePreset Name="Shuffle Resist/Weakness Types" @bind-Value="flags.ShuffleResWeakType" Tooltip="Resistance and weakness types are shuffled for all enemies." />
+		</Container>
+		<Container Class="flagColumn">
+			<EnumFlag UsePreset=usePreset Name="Enemies Density" @bind-Value="flags.EnemiesDensity" Tooltip="Set how many enemies are on each maps." />
+			<BoolFlag UsePreset=usePreset Name="Shuffle Enemies' Positions" @bind-Value="flags.ShuffleEnemiesPosition" Tooltip="Instead of their original position in a given map, enemies are randomly placed." />
+			<EnumFlag UsePreset=usePreset Name="Progressive Formations" @bind-Value="flags.ProgressiveFormations" Tooltip="Enemies' formations are selected by regions, with the weakest formations always selected in Foresta and the strongest in Windia.<br /><br />Disabled: Standard formations are used.<br /><br />By Regions (Strict): Formations will come exclusively from the current region, whatever the map is.<br /><br />By Regions (Keep Type): Formations will keep the original formation type and match with the nearest power level." />
+		</Container>
+	</Container>
 </Container>
 
 <div><br /></div>
 
 <Container class="sectionBox">
-    <div class="box-title text-secondary">Other</div> 
+	<div class="box-title text-secondary">Maps</div> 
 
-    <Container Class="flagBox">
-        <Container Class="flagColumn">
-            <EnumFlag UsePreset=usePreset Name="Leveling Curve" @bind-Value="flags.LevelingCurve" Tooltip="Adjust the quantity of XP needed to gain levels.<br/><br/>A curve of 2x means that leveling will be twice faster." />
-            <BoolFlag UsePreset=usePreset Name="Generate Spoilers File" @bind-Value="flags.EnableSpoilers" Tooltip="Generate a .txt file with each Key Item's locations." />
-        </Container>
-        <Container Class="flagColumn">
-            <BoolFlag UsePreset=usePreset Name="Shuffle Battlefields Rewards" @bind-Value="flags.ShuffleBattlefieldRewards" Tooltip="Shuffle the type of reward (Item, XP, GP) given by battlefields and color code them by reward type.<br/><br/>Blue: Give an item.<br/><br/>Grey: Give XP.<br/><br/>Green: Give GP." />
-            <EnumFlag UsePreset=usePreset Name="Battlefields Battles Quantity" @bind-Value="flags.BattlesQuantity" Tooltip="Adjust the number of battles that need to be fought to get a battlefield's reward." />
-        </Container>
-    </Container>
+	<Container Class="flagBox">
+		<Container Class="flagColumn">
+			<EnumFlag UsePreset=usePreset Name="Doom Castle" @bind-Value="flags.DoomCastleMode" Tooltip="Change how you reach the Dark King.<br/><br/>Standard: You need to defeat all four bosses and their floors to reach the Dark King.<br/><br/>Boss Rush: Only the bosses are blocking your way in the corridor to the Dark King's room.<br/><br/>Dark King Only: The way to the Dark King is free of any obstacle." />
+				<EnumFlag UsePreset=usePreset Name="Doom Castle Access" @bind-Value="flags.DoomCastleAccess" Tooltip="Set how accessible Doom Castle is.<br/><br/>Standard: You need to free Mac's Ship with the MegaGrenades and give Mac his cap to reach Doom Castle.<br/><br/>Freed Ship: Mac's Ship is already freed, you just need the Captain Cap.<br/><br/>Shortcut: Create a shortcut granting access from the start to Doom Castle at Focus Tower's entrance.<br/><br/>The Freed Ship and Shortcut options also modify the Desert floor so it can be navigated without the Mega Grenades and the Dragon Claw." />
+			<BoolFlag UsePreset=usePreset Name="Tweak Frustrating Dungeons" @bind-Value="flags.TweakedDungeons" Tooltip="Make some small changes to a few of the most annoying dungeons.<br/><br/>Ice Pyramid: Add 3 shortcuts on the 1st floor.<br/><br/>Giant Tree: Add shortcuts on the 1st and 4th floors and curtail mushrooms population.<br/><br/>Pazuzu's Tower: Staircases are devoid of enemies (regardless of Enemies Density settings)." />
+		</Container>
+		<Container Class="flagColumn">
+			<BoolFlag UsePreset=usePreset Name="Overworld Shuffle" @bind-Value="flags.OverworldShuffle" Tooltip="Shuffle the Overworld." />
+			<BoolFlag UsePreset=usePreset Name="Crests Shuffle" @bind-Value="flags.CrestShuffle" Tooltip="Shuffle the Crest tiles amongst themselves." />
+			<EnumFlag UsePreset=usePreset Name="Maps Shuffle" @bind-Value="flags.MapShuffling" Tooltip="Shuffle locations.<br /><br />None: No shuffle.<br /><br />Dungeons Internal: Shuffle each individual dungeons' floors. Temples and Towns aren't included.<br /><br />Dungeons Mixed: Mix up all dungeons' floors amongst themselves. <br /><br />Everything: Shuffle the dungeons, temples and towns' floors all amongst each others.<br/><br/>When dungeons are shuffled, defeating Pazuzu won't teleport you to the 7th floor, you have to get there normally to save the Crystal and get Pazuzu's Chest. Some one ways have been blocked in Lava Dome, Giant Tree & Pazuzu's Tower to avoid softlock." />
+		</Container>
+	</Container>
 </Container>
 
 <div><br /></div>
 
+	<Container class="sectionBox">
+		<div class="box-title text-secondary">Companions</div>
+
+		<Container Class="flagBox">
+			<Container Class="flagColumn">
+				<EnumFlag UsePreset=usePreset Name="Starting Companion" @bind-Value="flags.StartingCompanion" Tooltip="Set a companion to start with.<br/><br/>Random: Randomly select one companion.<br/><br/>Random+None: Randomly select a companion, with the possibility of none selected." />
+				<EnumFlag UsePreset=usePreset Name="Available Companions" @bind-Value="flags.AvailableCompanions" Tooltip="Select randomly which companions will join your party. Unavailable companions can still be reached to get their items and complete their quests if needed.<br/><br/>Note: If a Starting Companion is selected, it will always be available, regardless of this setting." />
+				<EnumFlag UsePreset=usePreset Name="Companions' Locations" @bind-Value="flags.CompanionsLocations" Tooltip="Set the primary location of companions. Their secondary location is always the same.<br/><br/>Standard: Companions will be at the same locations as in the original game.<br/><br/>Shuffled: Companions' locations are shuffled amongst themselves.<br/><br/>Shuffled Extended: Add all the Temples, as well as Phoebe's House and the Rope Bridge as possible locations." />
+				<BoolFlag UsePreset=usePreset Name="Kaeli's Mom Fight Minotaur" @bind-Value="flags.KaelisMomFightMinotaur" Tooltip="Transfer Kaeli's requirements (Tree Wither, Elixir) and the two items she's giving to her mom. Kaeli will be available to join the party right away without the Tree Wither." />
+			</Container>
+			<Container Class="flagColumn">
+				<EnumFlag UsePreset=usePreset Name="Leveling Type" @bind-Value="flags.CompanionLevelingType" Tooltip="Set how companions gain levels.<br/><br/>Quests: Complete each companion's individual quest for them to promote to their second version.<br/><br/>Quests Extended: Each companion has four exclusive quests, leveling each time a quest is completed.<br/><br/>Save the Crystals (All): Each time a Crystal is saved, all companions gain levels.<br/><br/>Save the Crystals (Individual): Each companion will level to their second version when a specific Crystal is saved.<br/><br/>Benjamin Level: Companions' level tracks Benjamin's." />
+				<EnumFlag UsePreset=usePreset Name="Spellbook Type" @bind-Value="flags.CompanionSpellbookType" Tooltip="Update companions' spellbook.<br/><br/>Standard: Original game spellbooks.<br/><br/>Standard Extended: Add some extra spells. Tristam gains Exit and Quake and Reuben gets Blizzard. For some leveling settings, Kaeli also gains Meteor and Tristam receives Flare.<br/><br/>Random Balanced: Randomize the spellbooks with an appropriate mix of spells.<br/><br/>Random Chaos: Randomize the spellbooks in total free-for-all." />
+			</Container>
+		</Container>
+	</Container>
+
+	<div><br /></div>
+
 <Container class="sectionBox">
-    <div class="box-title text-secondary">Preferences</div> 
-    <div class="text-secondary">Preferences doesn't affect the randomization and can be enabled/disabled without any impact on gameplay.</div>
-    <Container Class="flagBox">
-        <Container Class="flagColumn">
-            <BoolFlag UsePreset=false Name="Randomize Benjamin's Palette" @bind-Value="preferences.RandomBenjaminPalette" Tooltip="Randomly select Benjamin's palette, giving him a brand new look!" />
-            <BoolFlag UsePreset=false Name="Randomize Music" @bind-Value="preferences.RandomMusic" Tooltip="Shuffle the music tracks." />
-            <Field class="text-secondary dropFlag romBtn">
-                <Button Color="Color.Primary" Clicked="@SavePreferences">Save Preferences</Button>
-            </Field>
-        </Container>
-        <Container Class="flagColumn">
-        </Container>
-    </Container>
-</Container>
+	<div class="box-title text-secondary">Other</div> 
+
+	<Container Class="flagBox">
+		<Container Class="flagColumn">
+			<EnumFlag UsePreset=usePreset Name="Leveling Curve" @bind-Value="flags.LevelingCurve" Tooltip="Adjust the quantity of XP needed to gain levels.<br/><br/>A curve of 2x means that leveling will be twice faster." />
+			<BoolFlag UsePreset=usePreset Name="Shuffle Battlefields Rewards" @bind-Value="flags.ShuffleBattlefieldRewards" Tooltip="Shuffle the type of reward (Item, XP, GP) given by battlefields and color code them by reward type.<br/><br/>Blue: Give an item.<br/><br/>Grey: Give XP.<br/><br/>Green: Give GP." />
+			<EnumFlag UsePreset=usePreset Name="Battlefields Battles Quantity" @bind-Value="flags.BattlesQuantity" Tooltip="Adjust the number of battles that need to be fought to get a battlefield's reward." />
+		</Container>
+		<Container Class="flagColumn">
+			<EnumFlag UsePreset=usePreset Name="Hint NPCs" @bind-Value="flags.HintMode" Tooltip="Four NPCs, one in each INN, will reveal the location of an item. NPCs will never hint for an item already in your inventory, so hints may change during playthrough.<br/>If Enemy Density is set to 0%, NPCs will refuse to give hints until you have enough GPs to also cover any remaining vendor items. <br/><br/>None: No Hints.<br/><br/>Free: Hints are given for free.<br/><br/>Fixed: All hints will cost that amount of GPs.<br/><br/>Progressive: Each time you buy a hint, the cost of the other hints will increment by that amount." />
+			<BoolFlag UsePreset=usePreset Name="Disable Spoilers File" @bind-Value="flags.DisableSpoilers" Tooltip="Prevent the generation of a spoilers file with each Key Item's locations, only the GameInfo screen data will be included." />
+			<BoolFlag UsePreset=usePreset Name="Mystery Flags" @bind-Value="flags.HiddenFlags" Tooltip="Hide the flags options. This flag cannot be undone; it is recommended to backup or export your flags before enabling this option." />
+		</Container>
+	</Container>
+		</Container>
+	<div><br /></div>
+}
+else if(loadingDone)
+{
+	<div id="optionsSection"><br /></div>
+	<h2 class="text-secondary">Customization</h2>
+	<div><br /></div>
+
+	<Container class="sectionBox">
+		<div class="box-title text-secondary">Mystery Flags</div>
+		<Container Class="infoBox">
+			<div class="text-secondary">Flags have been hidden. Resetting flags will permanently erase them.</div>
+			<div><br /></div>
+			<Button Color="Color.Primary" Clicked="@ResetFromHiddenFlags" class="field-button romBtn">Reset Flags</Button>
+		</Container>
+	</Container>
+	<div><br /></div>
+
+}
+
+
+
+
+@if(loadingDone)
+{
+<PreferencesSection preferences="@preferences" />
 
 <div id="infoSection"><br /></div>
 
 <Information />
 
-<div><br /><br /><br /><br /><br /></div>
-
+	<div><br /><br /><br /></div>
+	<LogoCredit />
+}
 @code{
-    //bool IntroPaneVisible = true;
-    //bool FilePaneVisible = false;
-    //bool MainPaneVisible = false;
-    //bool ExtPaneVisible = false;
-
-    private FFMQRom newRom = new();
-    private long maxFileSize = 0x80200;
-    private bool isLoadingRom = false;
-    private bool isGenerating = false;
-    private bool romLoaded = false;
-    private bool usePreset = false;
-    private int titleHeight = 80;
-    private bool sandboxMode = false;
-    private bool betaStatus = false;
-
-    private Blob seed = new byte[4];
-    private string showSeed;
-    private Flags flags = new();
-    private Preferences preferences = new();
-    private bool generatedRom = false;
-    private string seedMessage = "";
-    private string romMessage = "";
-    private string flagsMessage = "";
-    private List<string> titleLetters = new List<string> { "logo/mqlogoM.png", "logo/mqlogoy.png", "logo/mqlogos.png", "logo/mqlogot.png", "logo/mqlogoi.png", "logo/mqlogoc.png", "logo/mqlogoQ.png", "logo/mqlogou.png", "logo/mqlogoe.png", "logo/mqlogos2.png", "logo/mqlogot2.png" };
-    private bool updateFlagString = true;
-    private string tempFlagString;
-
-    private string yamlPreset = "";
-    private string yamlMessage = "";
-    private string yamlName = "default";
-
-    [Parameter]
-    public string flagString
-    {
-        get
-        {
-            if (updateFlagString)
-            {
-                tempFlagString = flags.GenerateFlagString();                
-                UpdateUrl();
-            }
-            return tempFlagString;
-        }
-        set
-        {
-            if (updateFlagString)
-            {
-                SetFlags(value);
-                UpdateUrl();
-            }
-        }
-    }
-
-    private bool GetBetaStatus()
-    {
-        var uri = new Uri(NavigationManager.Uri);
-
-        string fullUrl = uri.OriginalString;
-        int index = fullUrl.IndexOf("dev");
-        if (index >= 0)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private bool GetSandboxStatus()
-    {
-        var uri = new Uri(NavigationManager.Uri);
-
-        string fullUrl = uri.OriginalString;
-        int index = fullUrl.IndexOf("sandbox");
-        if (index >= 0)
-        {
-
-            return true;
-        }    
-
-        return false;
-    }
-
-    private async Task OnGenerate()
-    {
-        isGenerating = true;
-        StateHasChanged();
-        await Task.Delay(1);
-        await Generate();
-        isGenerating = false;
-    }
-
-    private async Task Generate()
-    {
-        if (newRom.IsEmpty())
-        {
-            romMessage = "No file.";
-            return;
-        }
-
-        if (generatedRom)
-        {
-            newRom.RestoreOriginalData();
-            generatedRom = false;
-        }
-
-        if (!newRom.Validate())
-        {
-            romMessage = "Invalid ROM file.";
-            return;
-        }
-
-        if (GetBetaStatus())
-        {
-            newRom.beta = true;
-        }
-
-        try
-        {
-            newRom.Randomize(seed, flags, preferences);
-
-            romMessage = "ROM file generated successfully.";
-
-            var fs = newRom.DataStream();
-            var fileName = "FFMQR_" + FFMQLib.Metadata.Version + "_" + seed.ToHex() + "_" + flags.GenerateFlagString() + ".sfc";
-
-            using var streamRef = new DotNetStreamReference(stream: fs);
-
-            await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
-
-            if (flags.EnableSpoilers)
-            {
-                var fsSpoilers = newRom.SpoilerStream();
-                var fileNameSpoilers = "FFMQR_Spoilers_" + FFMQLib.Metadata.Version + "_" + seed.ToHex() + "_" + flags.GenerateFlagString() + ".txt";
-
-                using var streamRefSpoilers = new DotNetStreamReference(stream: fsSpoilers);
-
-                await JS.InvokeVoidAsync("downloadFileFromStream", fileNameSpoilers, streamRefSpoilers);
-            }
-        }
-        catch (Exception ex)
-        {
-            romMessage = ex.Message;
-            #if DEBUG
-                await ErrorDump(ex.Message);
-            #endif
-        }
-    
-        generatedRom = true;
-    }
-
-    private async Task ErrorDump(string dump)
-    {
-        var errorDump = new MemoryStream(Encoding.UTF8.GetBytes(romMessage));
-        var fileNameSpoilers = "FFMQR_Error_" + FFMQLib.Metadata.Version + "_" + seed.ToHex() + "_" + flags.GenerateFlagString() + ".txt";
-
-        using var streamRefSpoilers = new DotNetStreamReference(stream: errorDump);
-
-        await JS.InvokeVoidAsync("downloadFileFromStream", fileNameSpoilers, streamRefSpoilers);        
-    }
-
-
-    private async Task LoadFiles(FileChangedEventArgs e)
-    {
-        romMessage = "Loading...";
-        isLoadingRom = true;
-        StateHasChanged();
-        try
-        {
-            await newRom.LoadAsync(e.Files.First().OpenReadStream(maxFileSize));
-            if (!newRom.Validate())
-            {
-                romMessage = "Invalid ROM file.";
-                isLoadingRom = false;
-                return;
-            }
-            else
-            {
-                romMessage = "ROM file loaded succesfully.";
-                isLoadingRom = false;
-                romLoaded = true;
-                newRom.BackupOriginalData();
-                SavePreferences();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(ex.Message);
-        }
-    }
-
-    private void UnloadRom()
-    {
-        romLoaded = false;
-        preferences.RomPath = "";
-        romMessage = "";
-        newRom = new();
-        SavePreferences();
-    }
-
-    private async Task LoadYamlFromUpload(FileChangedEventArgs e)
-    {
-        try
-        {
-            using (StreamReader streamReader = new StreamReader(e.Files.First().OpenReadStream(maxFileSize), Encoding.UTF8))
-            {
-                await LoadYamlFromStreamReader(streamReader);
-            }
-        }
-        catch (Exception ex)
-        {
-            yamlMessage = ex.Message;
-            Console.WriteLine(ex.Message);
-        }
-    }
-
-    private async Task LoadYamlFromFile(string presetname)
-    {
-        try
-        {
-            var stream = await Http.GetStreamAsync("presets/" + presetname + ".yaml");
-
-            using (StreamReader streamReader = new StreamReader(stream, Encoding.UTF8))
-            {
-                await LoadYamlFromStreamReader(streamReader);
-            }
-        }
-        catch (Exception ex)
-        {
-            yamlMessage = ex.Message;
-            Console.WriteLine(ex.Message);
-        }
-    }
-
-    private async Task LoadYamlFromStreamReader(StreamReader streamReader)
-    {
-        try
-        {
-            using (streamReader)
-            {
-                yamlPreset = await streamReader.ReadToEndAsync();
-            }
-
-            yamlName = flags.ReadYaml(yamlPreset, seed);
-            flagsMessage = "Preset loaded succesfully.";
-        }
-        catch (Exception ex)
-        {
-            yamlMessage = ex.Message;
-            Console.WriteLine(ex.Message);
-        }
-    }
-
-    private async void OnExportYaml(string yamlname)
-    {
-        var yamlStream = flags.YamlStream(yamlname);
-        var filenameYaml = yamlname + ".yaml";
-        using var streamRefSpoilers = new DotNetStreamReference(stream: yamlStream);
-        {
-            await JS.InvokeVoidAsync("downloadFileFromStream", filenameYaml, streamRefSpoilers);
-        }
-    }
-
-    private async void OnPresetAction((StreamReader name, bool usepreset, bool loadfromfile) action)
-    {
-        if (!action.usepreset && !action.loadfromfile)
-        {
-            usePreset = false;
-            StateHasChanged();
-        }
-        else 
-        {
-            await LoadYamlFromStreamReader(action.name);
-            usePreset = action.usepreset;
-            StateHasChanged();
-        }
-    }
-
-
-    private void RollSeed()
-    {
-        var rng = new Random();
-        rng.NextBytes(seed);
-        MT19337 rng2 = new MT19337((uint)seed.ToUInts().Sum(x => x));
-        titleLetters.Shuffle(rng2);
-        showSeed = seed.ToHex();
-
-        if (usePreset)
-        {
-            flags.ReadYaml(yamlPreset, seed);
-        }
-
-        UpdateUrl();
-    }
-
-    private void UpdateUrl()
-    { 
-        var uri = new Uri(NavigationManager.Uri);
-
-        var test = NavigationManager.GetUriWithQueryParameters(new Dictionary<string, object>
-        {
-         { "s", showSeed },
-         { "f", flags.GenerateFlagString() }
-        });
-
-        NavigationManager.NavigateTo(test);
-    }
-
-    private string MakeParsableUriString(string uristring)
-    {
-        var qmarkIndex = uristring.IndexOf('?');
-        var hashIndex = uristring.IndexOf('#');
-
-        if (qmarkIndex == -1)
-        {
-            return ""; 
-        }
-        else if (qmarkIndex > hashIndex)
-        {
-            return uristring.Remove(0, qmarkIndex);
-        }
-        else
-        { 
-            return uristring.Remove(hashIndex).Remove(0, qmarkIndex);
-        }
-    }
-
-    protected override async void OnInitialized()
-    {
-        sandboxMode = GetSandboxStatus();
-        betaStatus = GetBetaStatus();
-        if (sandboxMode)
-        {
-            titleHeight = 240;
-        }
-
-        var uri = new Uri(NavigationManager.Uri);
-
-        string parsableUri = MakeParsableUriString(uri.OriginalString);
-
-        var seedParameter = HttpUtility.ParseQueryString(parsableUri).Get("s");
-        if (seedParameter != null)
-        {
-            SetSeed(seedParameter);
-        }
-        else
-        {
-            RollSeed();            
-        }
-
-        var flagsParameter = HttpUtility.ParseQueryString(parsableUri).Get("f");
-        if (flagsParameter != null)
-        {
-            flagString = flagsParameter;
-        }
-        else
-        {
-            await LoadYamlFromFile("sgl2022");
-            StateHasChanged();
-            flagsMessage = "Using default flags (SGL2022).";
-        }
-
-        LoadPreferences();
-    }
-
-    public void SavePreferences()
-    {
-        if (!newRom.IsEmpty())
-        {
-            newRom.RestoreOriginalData();
-            preferences.RomPath = Convert.ToBase64String(newRom.DataReadOnly);
-        }
-        else
-        {
-            preferences.RomPath = "";
-        }
-
-        var prefList = preferences.GetType().GetProperties().ToList();
-
-        foreach(var pref in prefList)
-        {
-            localStorage.SetItem(pref.Name, pref.GetValue(preferences, null));
-        }
-    }
-
-    public void LoadPreferences()
-    {
-        var prefList = preferences.GetType().GetProperties().ToList();
-
-        foreach(var pref in prefList)
-        {
-            if(pref.PropertyType == typeof(bool))
-            {
-                pref.SetValue(preferences, localStorage.GetItem<bool>(pref.Name));
-            }
-            else if(pref.PropertyType == typeof(string))
-            { 
-                string pathvalue = localStorage.GetItem<string>(pref.Name);
-
-                pref.SetValue(preferences, pathvalue ?? "");
-            }
-        }
-
-        if (preferences.RomPath != "")
-        {
-            newRom.Load(Convert.FromBase64String(preferences.RomPath));
-            romMessage = "Loading...";
-            isLoadingRom = true;
-            StateHasChanged();
-
-            try
-            {
-                if (!newRom.Validate())
-                {
-                    romMessage = "Invalid ROM file.";
-                    isLoadingRom = false;
-                    romLoaded = false;
-                    return;
-                }
-                else
-                {
-                    romMessage = "ROM file loaded from memory succesfully.";
-                    isLoadingRom = false;
-                    romLoaded = true;
-                    newRom.BackupOriginalData();
-                    StateHasChanged();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-            }
-        }
-    }
-
-    // Seed Field Functions
-    Task SeedOnChanged(string value)
-    {
-        showSeed = value;
-        EvaluateSeed(showSeed);
-        return Task.CompletedTask;
-    }
-
-    Task SeedOnKeyUp(KeyboardEventArgs value)
-    {
-        if (value.Key == "Enter")
-        {
-            EvaluateSeed(showSeed);
-            SetSeed(showSeed);
-            UpdateUrl();
-        }
-
-        return Task.CompletedTask;
-    }
-
-    Task SeedOnLoseFocus()
-    {
-        EvaluateSeed(showSeed);
-        SetSeed(showSeed);
-        UpdateUrl();
-        return Task.CompletedTask;
-    }
-
-    private void EvaluateSeed(string value)
-    {
-        if (value.Length < 8)
-        {
-            seedMessage = "Invalid Seed: Seed string is too short (min 8 digits).";
-        }
-        else if (value.Length > 8)
-        {
-            seedMessage = "Invalid Seed: Seed string is too long (max 8 digits).";
-        }
-        else
-        {
-            seedMessage = "";
-        }
-    }
-
-    private void SetSeed(string value)
-    {
-        showSeed = value;
-        try
-        {
-            if (showSeed.Length > 8)
-            { 
-                showSeed = showSeed.Remove(8);
-            }
-            showSeed = showSeed.PadLeft(8, '0');
-            seed = Blob.FromHex(showSeed);
-            seedMessage = "";
-        }
-        catch (Exception ex)
-        {
-            seedMessage = "Invalid Seed: " + ex.Message;
-        }
-    }
-
-
-
-    private async Task CopyTextToClipboard()
-    {
-        await JS.InvokeVoidAsync("copyClipboard");
-    }
-
-    // Flag Field Functions
-    Task FlagsOnChanged( string value )
-    {
-        updateFlagString = false;
-        tempFlagString = value;
-        return Task.CompletedTask;
-    }
-
-    Task FlagsOnKeyUp(KeyboardEventArgs value)
-    {
-        if (value.Key == "Enter")
-        {
-            updateFlagString = true;
-            flagString = tempFlagString;
-            UpdateUrl();
-        }
-
-        return Task.CompletedTask;
-    }
-
-    Task FlagsOnLoseFocus()
-    {
-        updateFlagString = true;
-        flagString = tempFlagString;
-        UpdateUrl();
-        return Task.CompletedTask;
-    }
-
-    Task SetFlags( string value )
-    {
-        try
-        {
-            flags.ReadFlagString(value);
-            flagsMessage = "Flags loaded successfully.";
-        }
-        catch (Exception)
-        {
-            flagsMessage = "Invalid flags string.";
-        }
-
-        return Task.CompletedTask;
-    }
+	private long maxFileSize = 0x80200;
+	private bool loadingDone = false;
+	private bool usePreset = false;
+	private bool betaStatus = false;
+
+
+	private Blob seed = new byte[4];
+	private string showSeed;
+	private Flags flags = new();
+	private Preferences preferences = new();
+	private ApConfigs apConfigs = new();
+	private string seedMessage = "";
+	private string flagsMessage = "";
+	private bool updateFlagString = true;
+	private string tempFlagString;
+
+	private string yamlPreset = "";
+	private string yamlMessage = "";
+	private string yamlName = "default";
+
+	private byte[] savedRom = new byte[0];
+
+	private string flagString
+	{
+		get
+		{
+			if (updateFlagString)
+			{
+				tempFlagString = flags.GenerateFlagString();                
+				UpdateUrl();
+			}
+			return tempFlagString;
+		}
+		set
+		{
+			if (updateFlagString)
+			{
+				SetFlags(value);
+				UpdateUrl();
+			}
+		}
+	}
+
+	private bool GetBetaStatus()
+	{
+		var uri = new Uri(NavigationManager.Uri);
+
+		string fullUrl = uri.OriginalString;
+		int index = fullUrl.IndexOf("dev");
+		if (index >= 0)
+		{
+			return true;
+		}
+
+		return false;
+	}
+
+	private async Task LoadYamlFromUpload(FileChangedEventArgs e)
+	{
+		try
+		{
+			using (StreamReader streamReader = new StreamReader(e.Files.First().OpenReadStream(maxFileSize), Encoding.UTF8))
+			{
+				await LoadYamlFromStreamReader(streamReader);
+			}
+		}
+		catch (Exception ex)
+		{
+			yamlMessage = ex.Message;
+			Console.WriteLine(ex.Message);
+		}
+	}
+
+	private async Task LoadYamlFromFile(string presetname)
+	{
+		try
+		{
+			var stream = await Http.GetStreamAsync("presets/" + presetname + ".yaml");
+
+			using (StreamReader streamReader = new StreamReader(stream, Encoding.UTF8))
+			{
+				await LoadYamlFromStreamReader(streamReader);
+			}
+		}
+		catch (Exception ex)
+		{
+			yamlMessage = ex.Message;
+			Console.WriteLine(ex.Message);
+		}
+	}
+
+	private async Task LoadYamlFromStreamReader(StreamReader streamReader)
+	{
+		try
+		{
+			using (streamReader)
+			{
+				yamlPreset = await streamReader.ReadToEndAsync();
+			}
+
+			yamlName = flags.ReadYaml(yamlPreset, seed);
+			flagsMessage = "Preset loaded succesfully.";
+		}
+		catch (Exception ex)
+		{
+			yamlMessage = ex.Message;
+			Console.WriteLine(ex.Message);
+		}
+	}
+
+	private async void OnExportYaml(string yamlname)
+	{
+		var yamlStream = flags.YamlStream(yamlname);
+		var filenameYaml = yamlname + ".yaml";
+		using var streamRefSpoilers = new DotNetStreamReference(stream: yamlStream);
+		{
+			await JS.InvokeVoidAsync("downloadFileFromStream", filenameYaml, streamRefSpoilers);
+		}
+	}
+
+	private async void OnPresetAction((Stream file, string filename, string action, bool usepreset, bool loadfromfile) action)
+	{
+		if (!action.usepreset && !action.loadfromfile)
+		{
+			usePreset = false;
+			StateHasChanged();
+		}
+		else
+		{
+			await LoadYamlFromStreamReader(new StreamReader(action.file, Encoding.UTF8));
+			usePreset = action.usepreset;
+			StateHasChanged();
+		}
+	}
+
+	private void RollSeed()
+	{
+		var rng = new Random();
+		rng.NextBytes(seed);
+		showSeed = seed.ToHex();
+
+		if (usePreset)
+		{
+			flags.ReadYaml(yamlPreset, seed);
+		}
+
+		UpdateUrl();
+	}
+
+	private void UpdateUrl()
+	{ 
+		string sectionNavigation = GetNavigationSection(NavigationManager.Uri, true);
+
+		string updatedUrl = NavigationManager.GetUriWithQueryParameters(new Dictionary<string, object>
+		{
+		 { "s", showSeed },
+		 { "f", flags.GenerateFlagString() }
+		});
+
+
+		NavigationManager.NavigateTo(NavigationManager.BaseUri + "?s=" + showSeed + "&f=" + flags.GenerateFlagString() + sectionNavigation);
+	}
+
+	private string MakeParsableUriString(string uristring)
+	{
+		var qmarkIndex = uristring.IndexOf('?');
+		var hashIndex = uristring.IndexOf('#');
+
+		if (qmarkIndex == -1)
+		{
+			return ""; 
+		}
+		else if (qmarkIndex > hashIndex)
+		{
+			return uristring.Remove(0, qmarkIndex);
+		}
+		else
+		{ 
+			return uristring.Remove(hashIndex).Remove(0, qmarkIndex);
+		}
+	}
+	private string GetNavigationSection(string uristring, bool withhash)
+	{
+		var qmarkIndex = uristring.IndexOf('?');
+		var hashIndex = uristring.IndexOf('#');
+
+		int hashOffset = withhash ? 0 : 1;
+
+
+		if (hashIndex == -1)
+		{
+			return "";
+		}
+		else if (hashIndex > qmarkIndex)
+		{
+			return uristring.Remove(0, hashIndex + hashOffset);
+		}
+		else
+		{
+			return uristring.Remove(qmarkIndex).Remove(0, hashIndex + hashOffset);
+		}
+	}
+
+	protected override async Task OnInitializedAsync()
+	{
+		betaStatus = GetBetaStatus();
+
+		var uri = new Uri(NavigationManager.Uri);
+
+		string parsableUri = MakeParsableUriString(uri.OriginalString);
+
+		var seedParameter = HttpUtility.ParseQueryString(parsableUri).Get("s");
+		if (seedParameter != null)
+		{
+			SetSeed(seedParameter);
+		}
+		else
+		{
+			RollSeed();            
+		}
+
+		var flagsParameter = HttpUtility.ParseQueryString(parsableUri).Get("f");
+		if (flagsParameter != null)
+		{
+			flagString = flagsParameter;
+		}
+		else
+		{
+			await LoadYamlFromFile("sgl2022");
+			StateHasChanged();
+			flagsMessage = "Using default flags (SGL2022).";
+		}
+	}
+
+	// Seed Field Functions
+	Task SeedOnChanged(string value)
+	{
+		showSeed = value;
+		EvaluateSeed(showSeed);
+		return Task.CompletedTask;
+	}
+
+	Task SeedOnKeyUp(KeyboardEventArgs value)
+	{
+		if (value.Key == "Enter")
+		{
+			EvaluateSeed(showSeed);
+			SetSeed(showSeed);
+			UpdateUrl();
+		}
+
+		return Task.CompletedTask;
+	}
+
+	Task SeedOnLoseFocus()
+	{
+		EvaluateSeed(showSeed);
+		SetSeed(showSeed);
+		UpdateUrl();
+		return Task.CompletedTask;
+	}
+
+	private void EvaluateSeed(string value)
+	{
+		if (value.Length < 8)
+		{
+			seedMessage = "Invalid Seed: Seed string is too short (min 8 digits).";
+		}
+		else if (value.Length > 8)
+		{
+			seedMessage = "Invalid Seed: Seed string is too long (max 8 digits).";
+		}
+		else
+		{
+			seedMessage = "";
+		}
+	}
+
+	private void SetSeed(string value)
+	{
+		showSeed = value;
+		try
+		{
+			if (showSeed.Length > 8)
+			{ 
+				showSeed = showSeed.Remove(8);
+			}
+			showSeed = showSeed.PadLeft(8, '0');
+			seed = Blob.FromHex(showSeed);
+			seedMessage = "";
+		}
+		catch (Exception ex)
+		{
+			seedMessage = "Invalid Seed: " + ex.Message;
+		}
+	}
+
+	// Flag Field Functions
+	Task FlagsOnChanged( string value )
+	{
+		updateFlagString = false;
+		tempFlagString = value;
+		return Task.CompletedTask;
+	}
+
+	Task FlagsOnKeyUp(KeyboardEventArgs value)
+	{
+		if (value.Key == "Enter")
+		{
+			updateFlagString = true;
+			flagString = tempFlagString;
+			UpdateUrl();
+		}
+
+		return Task.CompletedTask;
+	}
+
+	Task FlagsOnLoseFocus()
+	{
+		updateFlagString = true;
+		flagString = tempFlagString;
+		UpdateUrl();
+		return Task.CompletedTask;
+	}
+
+	Task SetFlags( string value )
+	{
+		try
+		{
+			flags.ReadFlagString(value);
+			flagsMessage = "Flags loaded successfully.";
+		}
+		catch (Exception)
+		{
+			flagsMessage = "Invalid flags string.";
+		}
+
+		return Task.CompletedTask;
+	}
+
+	void LoadFromMemoryDone(bool result)
+	{
+		loadingDone = true;
+		JS.InvokeVoidAsync("hideLoadingBox");
+
+		var uri = new Uri(NavigationManager.Uri);
+		string navigateTo = GetNavigationSection(uri.OriginalString, false);
+		StateHasChanged();
+
+		if (navigateTo != "")
+		{
+			JS.InvokeVoidAsync("blazorScrollToId", navigateTo);
+		}
+
+	}
+
+	async void ResetFromHiddenFlags()
+	{ 
+		await LoadYamlFromFile("sgl2022");
+		StateHasChanged();
+		flagsMessage = "Using default flags (SGL2022).";
+	}
 }

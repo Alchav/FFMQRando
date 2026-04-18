@@ -144,7 +144,6 @@ namespace FFMQLib
 			Entrances = new();
 
 			ReadDataFile();
-			//ReadOwEntrances(rom);
 		}
 		private void ReadOwEntrances(FFMQRom rom)
 		{
@@ -183,11 +182,9 @@ namespace FFMQLib
 				}
 			}
 		}
-		public void UpdateCrests(Flags flags, GameScriptManager tileScripts, GameMaps gameMaps, GameLogic logic, List<Teleporter> teleportersLong, FFMQRom rom, MT19337 rng)
+		public void UpdateCrests(Flags flags, GameScriptManager tileScripts, GameMaps gameMaps, GameLogic logic, List<Teleporter> teleportersLong, FFMQRom rom)
 		{
-			bool keepWintryTemple = (flags.MapShuffling == MapShufflingMode.None || flags.MapShuffling == MapShufflingMode.Dungeons) && !flags.CrestShuffle;
-
-			List<CrestTile> crestsList = new()
+            List<CrestTile> crestsList = new()
 			{
 				new CrestTile(51, (0x21, 6), (67, 8), MapList.ForestaInterior),
 				new CrestTile(52, (0x22, 6), (68, 8), MapList.ForestaInterior),
@@ -199,7 +196,7 @@ namespace FFMQLib
 				new CrestTile(276, (0x36, 1), (65, 8), MapList.LevelAliveForest),
 				new CrestTile(277, (0x37, 1), (66, 8), MapList.LevelAliveForest),
 				new CrestTile(158, (0x19, 6), (62, 8), MapList.Caves),
-				new CrestTile(191, keepWintryTemple ? (0x1A, 6) : (0x8C, 1), (63, 8), MapList.Caves),
+				new CrestTile(191, (0x1A, 6), (63, 8), MapList.Caves),
 				new CrestTile(175, (0x1F, 6), (45, 8), MapList.HouseInterior),
 				new CrestTile(171, (0x1E, 6), (54, 8), MapList.HouseInterior),
 				new CrestTile(308, (0x1C, 6), (71, 8), MapList.Caves),
@@ -244,7 +241,12 @@ namespace FFMQLib
 				var entranceToUpdate = Entrances.Where(x => x.Id == crest.Entrance).ToList();
 				var updatedLink = flatLinkList.Find(x => x.Entrance == crest.Entrance);
 				var currentLocation = logic.Rooms.Find(x => x.Links.Select(l => l.Entrance).Contains(crest.Entrance)).Location;
-				var targetLocation = logic.Rooms.Find(x => x.Id == logic.CrestRoomLinks.Find(x => x.Teleporter == crest.Script).Room).Location;
+				var targetLocation = logic.Rooms.Find(x => x.Id == updatedLink.TargetRoom).Location;
+				// Add special check for Sealed Temple/Wintry Temple Exit Trick
+				if (updatedLink.TargetRoom == 75)
+				{
+                    targetLocation = logic.Rooms.Find(x => x.Id == 74).Location;
+                }
 				var access = crestAccess.Intersect(updatedLink.Access).ToList().First();
 				var crestItem = crestItemAccess.Find(c => c.Item2 == access).Item1;
 				var newTeleporter = crestsList.Find(x => x.Script == updatedLink.Teleporter).TargetTeleporter;
@@ -307,7 +309,7 @@ namespace FFMQLib
 				targetEntrance.Teleporter = entrance.Item2;
 			}
 
-			if (flags.MapShuffling != MapShufflingMode.None && flags.MapShuffling != MapShufflingMode.Overworld)
+			if (flags.MapShuffling != MapShufflingMode.None)
 			{
 				UpdateVolcano();
 			}
@@ -405,10 +407,7 @@ namespace FFMQLib
 			}
 
 			Entrances = result;
-			//EntrancesLinks = result.EntrancesLinksList.Select(x => new EntrancesLink(x)).ToList();
-			yamlfile = "";
 		}
-
 		public string GenerateYaml()
 		{
 			//List<Entrance> entrances = Entrances.SelectMany(x => x.Entrances.Select(e => new Entrance(x.AreaId, x.Name, e))).ToList();
