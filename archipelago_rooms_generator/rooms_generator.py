@@ -257,6 +257,11 @@ def _select_overworld_link(
     return rng.pick_from(available)
 
 
+def _shuffle_error(stage: str, **context: Any) -> RuntimeError:
+    context_str = ", ".join(f"{k}={v}" for k, v in sorted(context.items()))
+    return RuntimeError(f"Floor Shuffle: {stage} ({context_str})")
+
+
 def _crest_shuffle(rooms: list[dict[str, Any]], crest_shuffle: bool, rng: MT19337Compat) -> None:
     crest_list = [
         {"entrance": [67, 8], "origins": [64, 8], "deadend": True, "priority": 0},
@@ -708,6 +713,7 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
 
     guard = 0
     intradungeon_progress_retries = 0
+    progress_downgrade_attempts = 0
     while progress_cluster_rooms:
         guard += 1
         if guard > 10000:
@@ -716,9 +722,19 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
                 guard = 0
                 rng.shuffle(progress_cluster_rooms)
                 continue
-            deadend_cluster_rooms.extend(progress_cluster_rooms)
-            progress_cluster_rooms = []
-            break
+            if progress_downgrade_attempts < 2:
+                progress_downgrade_attempts += 1
+                deadend_cluster_rooms.extend(progress_cluster_rooms)
+                progress_cluster_rooms = []
+                break
+            raise _shuffle_error(
+                "Progress placement exhausted retries",
+                intradungeon=intradungeon,
+                guard=guard,
+                intradungeon_progress_retries=intradungeon_progress_retries,
+                progress_downgrade_attempts=progress_downgrade_attempts,
+                remaining_progress=len(progress_cluster_rooms),
+            )
         if intradungeon:
             same_loc_origins = [
                 r for r in core_cluster_rooms
@@ -840,6 +856,13 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
     mac_exception_count = 0
     intradungeon_deadend_retries = 0
     while deadend_cluster_rooms:
+        if len(deadend_cluster_rooms) < 2:
+            if intradungeon:
+                raise _shuffle_error(
+                    "Deadend pairing requires even count",
+                    remaining_deadends=len(deadend_cluster_rooms),
+                )
+            break
         rng.shuffle(deadend_cluster_rooms)
         destination_rooms = [deadend_cluster_rooms[0], deadend_cluster_rooms[1]]
 
@@ -864,6 +887,14 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
                     mac_exception_count = 0
                     rng.shuffle(deadend_cluster_rooms)
                     continue
+                if intradungeon:
+                    raise _shuffle_error(
+                        "Deadend placement exhausted retries",
+                        intradungeon=intradungeon,
+                        mac_exception_count=mac_exception_count,
+                        intradungeon_deadend_retries=intradungeon_deadend_retries,
+                        remaining_deadends=len(deadend_cluster_rooms),
+                    )
                 break
             continue
 
@@ -884,6 +915,13 @@ def _floor_shuffle(rooms: list[dict[str, Any]], map_shuffle: str | int, rng: MT1
     for room in core_cluster_rooms:
         while room.links:
             if len(room.links) % 2 == 1:
+                if intradungeon:
+                    raise _shuffle_error(
+                        "Core cluster ended with odd unpaired links",
+                        room_id=min(room.rooms) if room.rooms else -1,
+                        links=len(room.links),
+                        location=room.location,
+                    )
                 break
             _connect_link(rooms, pending_links, rng.take_from(room.links), rng.take_from(room.links))
 

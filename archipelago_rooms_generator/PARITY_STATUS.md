@@ -7,9 +7,9 @@ This tracks parity work between:
 
 ## Snapshot
 
-- **Overall estimate:** ~85-92% behavioral parity for typical seeds/modes.
-- **Highest-risk remaining gap:** error/retry behavior parity.
-- **Current expected user impact:** most seeds produce playable shuffles; remaining divergence is primarily in edge-case failure/retry choices and diagnostics.
+- **Overall estimate:** ~90-95% behavioral parity for typical seeds/modes.
+- **Highest-risk remaining gap:** cross-implementation output fixture coverage.
+- **Current expected user impact:** generation behavior is closely aligned; remaining confidence work is primarily verification breadth rather than known algorithmic gaps.
 
 ## What is now implemented in Python
 
@@ -58,13 +58,9 @@ This tracks parity work between:
 
 ## Remaining gaps (ordered by impact)
 
-### 1) Error/retry behavior parity (MEDIUM)
+### 1) Cross-implementation fixture matrix coverage (LOW-MEDIUM)
 
-**C# behavior:** targeted loops + explicit exception/dump paths in specific invalid states.  
-**Python today:** selected loops still use bailout/fallback behavior to avoid hard failures.
-
-Likely effect:
-- Python may complete with a “best effort” topology where C# would continue searching or fail with diagnostics.
+**Status:** parity logic work is implemented for current tracked items; remaining work is expanding regression confidence via seed/mode fixture comparisons against C# outputs.
 
 ## Completion criteria for “full parity”
 
@@ -73,6 +69,8 @@ To claim full parity, all of the following should be true:
 1. Align failure/diagnostic behavior for invalid placements.
 2. Add cross-implementation fixture tests that compare Python output to C# output for a seed/mode matrix.
 
+> Note: item (1) is now substantially implemented in floor-shuffle retry/diagnostic paths; fixture coverage remains the primary completion blocker.
+
 ## Practical next step
 
-Next highest-value coding step: align C#-style failure/retry/diagnostic behavior, then add cross-implementation seed-matrix fixture comparisons.
+Next highest-value coding step: add cross-implementation seed-matrix fixture comparisons and use them to validate any remaining edge-case branch differences.
