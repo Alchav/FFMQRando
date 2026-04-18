@@ -7,9 +7,9 @@ This tracks parity work between:
 
 ## Snapshot
 
-- **Overall estimate:** ~75-85% behavioral parity for typical seeds/modes.
-- **Highest-risk remaining gap:** full `ClusterLocation`-based intradungeon validation/assembly loop.
-- **Current expected user impact:** most seeds produce playable shuffles, but edge-case seeds may differ in structure/robustness from C#.
+- **Overall estimate:** ~80-90% behavioral parity for typical seeds/modes.
+- **Highest-risk remaining gap:** exact overworld relinking semantics.
+- **Current expected user impact:** most seeds produce playable shuffles; remaining divergence is mainly in edge-case branch choices and retry/failure semantics.
 
 ## What is now implemented in Python
 
@@ -37,7 +37,11 @@ This tracks parity work between:
 ### Location-aware behavior
 
 - ✅ Clusters receive location stamps from Subregion links.
-- ✅ Intradungeon pre-pass now prioritizes same-location progress/deadend placement.
+- ✅ Intradungeon same-location assembly now uses a per-origin retry loop that:
+  - stages progress and deadend placement from location-matching clusters
+  - propagates inherited restrictions while assembling a candidate
+  - validates leftover link state before commit (no unresolved forced-deadend leftovers, even leftover link count)
+  - commits pairings in batch only after a valid candidate is found
 - ✅ Overworld reconnection prefers matching location links where possible.
 
 ### Crystal routing
@@ -51,16 +55,7 @@ This tracks parity work between:
 
 ## Remaining gaps (ordered by impact)
 
-### 1) Full `ClusterLocation` validation loop parity (HIGH)
-
-**C# behavior:** intradungeon mode builds per-location candidate assemblies and retries until a valid configuration (including odd-link/no-exit constraints).  
-**Python today:** location-aware pre-pass + generic fallback loops, but no full retry/validation model equivalent.
-
-Likely effect:
-- Some seeds that C# would restructure/retry may settle differently in Python.
-- Edge-case robustness can diverge.
-
-### 2) Exact overworld relinking semantics (MEDIUM-HIGH)
+### 1) Exact overworld relinking semantics (MEDIUM-HIGH)
 
 **C# behavior:** explicit `ConnectOverworldLink(...)` flow with location-sensitive decisions across fixed/switch groups and crystal source logic.  
 **Python today:** location-preferred reconnection exists, but not all C# branching/fallback semantics are mirrored.
@@ -68,7 +63,7 @@ Likely effect:
 Likely effect:
 - Region-to-overworld doorway mapping can differ while still being valid.
 
-### 3) Error/retry behavior parity (MEDIUM)
+### 2) Error/retry behavior parity (MEDIUM)
 
 **C# behavior:** targeted loops + explicit exception/dump paths in specific invalid states.  
 **Python today:** selected loops still use bailout/fallback behavior to avoid hard failures.
@@ -80,11 +75,10 @@ Likely effect:
 
 To claim full parity, all of the following should be true:
 
-1. Implement `ClusterLocation`-equivalent intradungeon assembly/retry rules.
-2. Port `ConnectOverworldLink` branching semantics end-to-end.
-3. Align failure/diagnostic behavior for invalid placements.
-4. Add cross-implementation fixture tests that compare Python output to C# output for a seed/mode matrix.
+1. Port `ConnectOverworldLink` branching semantics end-to-end.
+2. Align failure/diagnostic behavior for invalid placements.
+3. Add cross-implementation fixture tests that compare Python output to C# output for a seed/mode matrix.
 
 ## Practical next step
 
-Next highest-value coding step: port C# intradungeon `ClusterLocation` assembly loop (progress/deadend merge + odd/no-exit validation), then compare outputs on a seed matrix.
+Next highest-value coding step: port/verify full C# `ConnectOverworldLink` branch behavior, then add cross-implementation seed-matrix fixture comparisons.
